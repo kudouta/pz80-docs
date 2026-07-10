@@ -1,0 +1,846 @@
+# pz80
+
+Z80用のツールを作ってみました。CLIとして動作しますが、Pythonモジュールとしても利用できます。
+
+## 概要
+
+pz80は下記の機能を持ちます。
+
+* **アセンブラ**: Z80アセンブリソースコードをバイナリに変換
+* **逆アセンブラ**: バイナリファイルをZ80アセンブリニーモニックに変換
+* **ウォーカー**: バイナリの制御フローグラフをトレースし、コードとして到達できないデータ領域を検出
+
+## 目次
+
+* [必要要件](#必要要件)
+* [インストール](#インストール)
+* [使い方](#使い方)
+  * [アセンブラ (asm)](#アセンブラ-asm)
+  * [逆アセンブラ (disasm)](#逆アセンブラ-disasm)
+  * [ウォーカー (walk)](#ウォーカー-walk)
+* [設定ファイル詳細](#設定ファイル詳細)
+* [アセンブリ言語仕様](#アセンブリ言語仕様)
+* [Pythonモジュールとしての使用](#pythonモジュールとしての使用)
+  * [公開API 一覧](#公開api-一覧)
+* [ライセンス](#ライセンス)
+
+## 必要要件
+
+* Python 3.10 以上
+
+## インストール
+
+現在ドキュメントのみの公開でプログラムはテスト中です。
+
+## 使い方
+
+`pz80` コマンド（または `python -m pz80`）で使用します。
+
+```bash
+C:\>pz80
+usage: pz80 [-h] {walk,disasm,asm} ...
+
+Z80 assembler & disassembler v0.4.10
+
+positional arguments:
+  {walk,disasm,asm}
+    walk        Detect data regions in binary via CFG tracing
+    disasm      Z80 disassembler
+    asm         Z80 assembler
+
+options:
+  -h, --help    show this help message and exit
+
+C:\>
+```
+
+### アセンブラ (asm)
+
+```bash
+C:\>pz80 asm --help
+usage: pz80 asm [-h] -f FILE -o OUTPUT [-s SIZE]
+
+options:
+  -h, --help           show this help message and exit
+  -f, --file FILE      asm file
+  -o, --output OUTPUT  output file(bin)
+  -s, --size SIZE      *option* : output file(bin) size
+
+C:\>
+```
+
+ソースファイルをアセンブルしてバイナリを出力します。
+
+```bash
+pz80 asm -f source.asm -o output.bin
+```
+
+**オプション:**
+
+* `-f`, `--file`: 入力アセンブリファイル（必須）
+* `-o`, `--output`: 出力バイナリファイル（必須）
+* `-s`, `--size`: 出力ファイルサイズを指定（オプション）。指定サイズまで `0x00` でパディングします。
+
+### 逆アセンブラ (disasm)
+
+```bash
+C:\>pz80 disasm --help
+usage: pz80 disasm [-h] [-i INPUT] [-c CONFIG] [-s START] [-n] [-o OUTPUT]
+
+options:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        input image file (specify -i multiple times for multiple files)
+  -c CONFIG, --config CONFIG
+                        config file (Python module, see README)
+  -s START, --start START
+                        start address
+  -n, --nodump          remove dump info
+  -o OUTPUT, --output OUTPUT
+                        output file
+
+C:\>
+```
+
+バイナリファイルを0番地から順に配置して逆アセンブルします。
+
+```bash
+pz80 disasm -i prg0.bin -i prg1.bin -i prg2.bin
+```
+
+**オプション:**
+
+* `-i`, `--input`: 入力バイナリファイル（複数指定可）。`-c` で `bins` を指定した場合は省略可。
+* `-s`, `--start`: 逆アセンブル開始アドレス（デフォルト: `0x0000`、または `-c` の `start` 値）
+* `-o`, `--output`: 出力ファイル（デフォルト: 標準出力）
+* `-n`, `--nodump`: ダンプ情報を非表示にし、アセンブリのみ出力
+* `-c`, `--config`: 設定ファイル（Python モジュール）（オプション）
+
+#### 設定ファイルについて
+
+`-c` オプションでPythonモジュール形式の設定ファイルを指定することで、作業対象のバイナリファイルの配置・逆アセンブルの挙動をカスタマイズできます。ファイルパスまたはモジュール名のどちらでも指定できます。設定項目はすべてオプションで、定義した項目のみが適用されます。
+
+| 変数名          | 型        | 対象            | 説明                                                                                    |
+| ------------ | -------- | ------------- | ------------------------------------------------------------------------------------- |
+| `bins`       | list     | disasm / walk | バイナリファイル配置リスト `[(ファイルパス, ロードアドレス), ...]`。指定時は `-i` 不要。                                |
+| `start`      | int      | disasm / walk | 逆アセンブル/ウォーク開始アドレス。CLI の `-s` が未指定の場合に使用。                                              |
+| `data`       | list     | disasm        | `db` として扱うアドレス範囲 `[[開始, 終了], ...]`（両端含む）。                                             |
+| `chr`        | tuple    | disasm        | バイト値→表示文字の256要素タプル。未指定時は標準ASCIIテーブル（0x20〜0x7E）を使用。                                    |
+| `output`     | function | disasm        | カスタム出力関数。未指定時は `アドレス オペコード ラベル ニーモニック` 形式で標準出力。                                       |
+| `entry`      | list     | walk / disasm | 追加エントリポイント。シンボル名または整数アドレスで指定。walk では CLI の `-e` とマージ、disasm ではラベル付与（`L_xxxx:`）に流用される。 |
+| `m1_handler` | function | disasm / walk | M1サイクル復号ハンドラー `(address, byte) -> byte`。暗号化ROM対応。                                     |
+
+各属性の詳細な使用例は「[設定ファイル詳細](#設定ファイル詳細)」を参照してください。
+
+### ウォーカー (walk)
+
+```bash
+C:\>pz80 walk --help
+usage: pz80 walk [-h] [-i INPUT] [-c CONFIG] [-s START] [-e ADDR_OR_SYMBOL]
+
+options:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        input binary file (specify -i multiple times for multiple files)
+  -c CONFIG, --config CONFIG
+                        config file (Python module, see README)
+  -s START, --start START
+                        start address (default: 0x0000)
+  -e ADDR_OR_SYMBOL, --entry ADDR_OR_SYMBOL
+                        additional entry point (address or: RESET/RST0-7/IM1/NMI)
+
+C:\>
+```
+
+バイナリファイルを制御フローグラフで解析し、コードとして到達できないアドレス範囲をデータ領域として出力します。出力は `disasm` の設定ファイルの `data` 変数として直接利用できる形式です。
+
+```bash
+pz80 walk -i rom.bin -e NMI -e IM1
+```
+
+出力例:
+
+```python
+data = [
+    [0x1000, 0x12FF],
+    [0x2000, 0x2FFF],
+]
+```
+
+**オプション:**
+
+* `-i`, `--input`: 入力バイナリファイル（複数指定可）。複数ファイルは先頭から順に連結して扱います。`-c` で `bins` を指定した場合は省略可。
+* `-c`, `--config`: 設定ファイル（Python モジュール）。バイナリファイル配置（`bins`）・エントリポイント（`entry`・`start`）を記述できます（オプション）。
+* `-s`, `--start`: メインエントリポイント（デフォルト: `0x0000`、または `-c` の `start` 値）。CLI 指定が `-c` より優先。
+* `-e`, `--entry`: 追加エントリポイント（複数指定可）。シンボル名または16進数アドレスで指定。`-c` の `entry` とマージされます。
+
+#### 設定ファイルを使ったバイナリファイル配置指定
+
+複数のバイナリファイルを異なるアドレスに配置する場合は `-c` 設定ファイルの `bins` 属性を使います。ギャップ領域（バイナリファイル未配置のアドレス）は自動的に出力から除外されます。
+
+```bash
+pz80 walk -c rom_layout.py
+```
+
+```python
+# rom_layout.py
+bins = [
+    ("smc1f",   0x0000),
+    ("smc2f",   0x0800),
+    ("smc3f",   0x1000),
+    ("smc4f",   0x1800),
+    ("e5",      0x2000),
+    ("bepr199", 0x2800),
+    ("e7",      0x3000),
+    ("smc8f",   0x3800),
+]
+entry = ["NMI", "IM1"]  # 追加エントリポイント（-e と同等）
+start = 0x0000          # メインエントリポイント（-s と同等、CLI が優先）
+```
+
+同じ設定ファイルを `disasm -c` に渡すと、`bins` を使って同じバイナリファイル配置で逆アセンブルできます。`data` や `output` など disasm 専用の属性も同じファイルにまとめて記述できます。
+
+#### エントリポイントのシンボル名
+
+Z80 の固定ベクタアドレスをシンボル名で指定できます。
+
+| シンボル             | アドレス     | 説明                   |
+| ---------------- | -------- | -------------------- |
+| `RESET` / `RST0` | `0x0000` | リセットベクタ              |
+| `RST1`           | `0x0008` | RST 1                |
+| `RST2`           | `0x0010` | RST 2                |
+| `RST3`           | `0x0018` | RST 3                |
+| `RST4`           | `0x0020` | RST 4                |
+| `RST5`           | `0x0028` | RST 5                |
+| `RST6`           | `0x0030` | RST 6                |
+| `RST7` / `IM1`   | `0x0038` | RST 7 / 割り込みモード1ハンドラ |
+| `NMI`            | `0x0066` | 非マスカブル割り込みハンドラ       |
+
+#### disasm との連携例
+
+```bash
+# 1. ウォーカーでデータ領域を検出して設定ファイルに保存
+pz80 walk -i rom.bin -e NMI > config.py
+
+# 2. 生成した設定ファイルを使って逆アセンブル
+pz80 disasm -i rom.bin -c config.py
+```
+
+#### 追跡する分岐命令
+
+制御フローグラフは以下の命令の分岐先を追跡します。
+
+* `JP` / `JR` / `CALL` / `DJNZ`：直接アドレス指定の分岐・呼び出し。
+* `RST nn`：固定ベクタ（`0x0000`〜`0x0038`）へのサブルーチン呼び出しとして分岐先を追跡しつつ、後続命令も継続します。
+
+#### アルゴリズムの限界
+
+* `JP (HL)` / `JP (IX)` / `JP (IY)` などの間接分岐は実行時の値が不明なため、分岐先を追跡できません。ジャンプテーブルやステートマシンで使われる場合、その先のコードを `-e` で手動指定する必要があります。
+* IM2（割り込みモード2）のベクタテーブル経由の呼び出しは `-e` で手動指定が必要です。
+
+## 設定ファイル詳細
+
+`-c` で指定する設定ファイルはPythonソースで構成します。各属性について下記にまとめます。
+
+### バイナリファイル配置 (`bins` / `start`)
+
+複数のバイナリファイルをZ80アドレス空間の異なる位置に配置します。`disasm` と `walk` の両コマンドで使用されます。
+
+```python
+# rom_layout.py
+bins = [
+    ("smc1f",   0x0000),
+    ("smc2f",   0x0800),
+    ("smc3f",   0x1000),
+    ("smc4f",   0x1800),
+    ("e5",      0x2000),
+    ("bepr199", 0x2800),
+    ("e7",      0x3000),
+    ("smc8f",   0x3800),
+]
+
+start = 0x0000  # 逆アセンブル/ウォーク開始アドレス（CLI の -s が優先）
+```
+
+```bash
+pz80 disasm -c rom_layout.py
+pz80 walk   -c rom_layout.py
+```
+
+### データ領域指定 (`data`)
+
+指定したアドレス範囲を命令ではなくデータ（`db`）として出力します。`disasm` 専用。
+
+```python
+data = [
+    [0x8000, 0x80FF],  # スプライトデータ
+    [0x8100, 0x81FF],  # タイルマップ
+]
+```
+
+出力形式：`db 0xXX ; [文字]`（`[文字]` は `chr` テーブルで決まる）
+
+### 文字テーブル (`chr`)
+
+`db` 行のコメント `; [文字]` に使われる256要素のタプルです。`disasm` 専用。
+
+**デフォルトの動作:**
+
+| アドレス範囲    | 表示                        |
+| --------- | ------------------------- |
+| 0x00〜0x1F | `.`（制御文字）                 |
+| 0x20〜0x7E | ASCII印刷可能文字そのまま（スペース〜`~`） |
+| 0x7F〜0xFF | `.`                       |
+
+**カスタマイズ方法:**
+
+全256要素を定義する必要があります。デフォルトテーブルを取得して一部変更するのが効率的です。
+
+```python
+from pz80 import Z80
+
+# デフォルトテーブルをベースに一部変更
+_chr = list(Z80().strmap)
+_chr[0xC7] = "@"   # 0xC7 → '@'
+_chr[0xF3] = "f"   # 0xF3 → 'f'
+_chr[0xFB] = "h"   # 0xFB → 'h'
+chr = tuple(_chr)
+```
+
+全256要素を定義すれば独自のコード体系にも対応できます。
+
+```python
+chr = (
+    #  0    1    2    3    4    5    6    7    8    9    A    B    C    D    E    F
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F",  # 00
+    "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V",  # 10
+    "W", "X", "Y", "Z", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".",  # 20
+    # ... 以下 0xFF まで256要素
+)
+```
+
+### カスタム出力 (`output`)
+
+逆アセンブル結果の出力形式を完全に制御できます。`disasm` 専用。
+
+```python
+def output(dis, sw):
+    """
+    dis: 逆アセンブルデータのリスト
+    sw:  --nodump フラグ (True: アドレス・オペコードを非表示)
+    """
+    for p in dis:
+        if p.get("label"):
+            print(p["label"])
+        if p.get("asm"):
+            indent = "    " if p.get("opcode") else ""
+            print(f'{indent}{p["asm"]}')
+```
+
+`dis` の各要素の構成：
+
+| キー        | 型          | 説明                            |
+| --------- | ---------- | ----------------------------- |
+| `address` | int        | 命令のアドレス                       |
+| `opcode`  | list\[int] | オペコードのバイト列（ORG行などでは存在しない場合あり） |
+| `asm`     | str        | アセンブリ文字列（例: `ld a, 0x10`）     |
+| `label`   | str        | ラベル文字列（存在する場合のみ。例: `L_0100:`） |
+
+### エントリポイント (`entry`)
+
+`walk` コマンドの追加エントリポイントを config に記述できます。CLI の `-e` とマージされます。
+
+```python
+entry = ["NMI", "IM1", 0x0018]  # シンボル名・整数アドレスの混在可
+```
+
+`disasm` コマンドでは、同じ `entry` がラベル付与（`L_xxxx:`）に流用されます。NMI など逆アセンブル結果のコード中に参照のないエントリポイントにもラベルが付き、`walk` と一貫したラベル付けになります。
+
+### M1ハンドラー (`m1_handler`)
+
+Z80オペコード読み込み時に呼び出されるハンドラーで config に記述できます。`disasm` と `walk` の両方で使用されます。使い方はピンとこないかもしれませんが、例えば暗号化されたバイナリーファイルの復号タイミングに利用できます。
+
+```python
+def m1_handler(address, byte):
+    # アドレスとバイト値から復号キーを導出する例
+    key = (address & 1) ^ ((byte & 0x80) >> 7)
+    return byte ^ key
+```
+
+config に `m1_handler` を定義することで、`walk` によるデータ領域検出と `disasm` による逆アセンブルの両方に同じ復号ロジックが適用されます。
+
+### 設定ファイルの総合例
+
+バイナリファイル配置・データ領域・文字テーブル・出力・M1ハンドラーをまとめた例です。`disasm` と `walk` の両方に使用できます。
+
+```python
+# rom_layout.py
+
+# バイナリファイル配置（walk / disasm 共通）
+bins = [
+    ("smc1f",   0x0000),
+    ("smc2f",   0x0800),
+    ("smc3f",   0x1000),
+    ("smc4f",   0x1800),
+    ("e5",      0x2000),
+    ("bepr199", 0x2800),
+    ("e7",      0x3000),
+    ("smc8f",   0x3800),
+]
+start = 0x0000
+
+# walk 用エントリポイント
+entry = ["NMI", "IM1"]
+
+# M1サイクル復号ハンドラー（walk / disasm 共通）
+def m1_handler(address, byte):
+    key = (address & 1) ^ ((byte & 0x80) >> 7)
+    return byte ^ key
+
+# データ領域（disasm 用）
+data = [
+    [0x3900, 0x3FFF],
+]
+
+# 文字テーブル（disasm 用）: デフォルトをベースに一部変更
+from pz80 import Z80
+_chr = list(Z80().strmap)
+_chr[0xC7] = "@"
+chr = tuple(_chr)
+
+# カスタム出力（disasm 用）
+def output(dis, sw):
+    for p in dis:
+        if p.get("label"):
+            print(p["label"])
+        if p.get("asm"):
+            indent = "    " if p.get("opcode") else ""
+            print(f'{indent}{p["asm"]}')
+```
+
+## アセンブリ言語仕様
+
+### 基本構文
+
+大文字・小文字は区別しません。`;` 以降はコメントとして扱います。
+
+```asm
+ORG 0x0100    ; 開始アドレス設定
+ld a, 0x10    ; 16進数
+ld b, 10      ; 10進数
+ld c, 0b1010  ; 2進数
+ld d, 0o17    ; 8進数
+ld hl, 'AB'   ; 文字リテラル (0x4142)
+ld a, -1      ; 負数（0xFF に変換）
+```
+
+### 数値リテラル
+
+数値は Python の整数リテラル形式で記述します。
+
+| 記法       | 例          | 説明          |
+| -------- | ---------- | ----------- |
+| 10進数     | `42`       | 接頭辞なし       |
+| 16進数     | `0x2A`     | `0x` 接頭辞    |
+| 2進数      | `0b101010` | `0b` 接頭辞    |
+| 8進数      | `0o52`     | `0o` 接頭辞    |
+| 文字リテラル   | `'A'` `'AB'` | 1〜2文字。2文字は上位=1文字目・下位=2文字目（`'AB'` → `0x4142`） |
+
+* **負数**も指定できます。バイトオペランドは `-128`〜`255`、ワードオペランドは `-32768`〜`65535` の範囲で、内部で2の補数に変換されます（例: `db -1` → `0xFF`）。
+* 文字リテラルは式の中でも使用できます（例: `db 'A' + 1`、`dw 'A' * 0x100`）。
+
+### 疑似命令
+
+| 命令        | 説明               | 例                    |
+| --------- | ---------------- | -------------------- |
+| ORG       | アドレス指定           | ORG 0x8000           |
+| EQU       | 定数定義             | VAL: EQU 0xFF        |
+| DB / DEFB | バイトデータ定義         | db 1, 2, "String", 0 |
+| DW / DEFW | ワードデータ定義         | dw 0x1234, LABEL     |
+| DS / DEFS | 指定バイト数をfill値で埋める | ds 16, 0xFF          |
+| END       | アセンブル終了（以降の行を無視） | end                  |
+
+**EQU の制約:** 定義値は `0`〜`65535` の範囲です。右辺には数値リテラルと算術式のみ使用でき、他のラベルや EQU 定数を参照することはできません。
+
+```asm
+WIDTH:  EQU 8
+HEIGHT: EQU 8
+SIZE:   EQU 8 * 8       ; OK（数値リテラルと算術式）
+AREA:   EQU WIDTH * HEIGHT  ; NG（他シンボルの参照は不可）
+```
+
+### ラベル
+
+`:` で終わる識別子をラベルとして定義できます。行頭、または命令の前に記述可能です。ラベルも大文字・小文字を区別しません。
+
+**ラベルの命名規則:**
+
+* 先頭文字: 英字 (`A-Z`, `a-z`) または `@`
+* 2文字目以降: 英数字・`_` など自由
+* 予約語（レジスタ名・ニーモニック・疑似命令名）は使用不可
+
+```asm
+LOOP:      dec b       ; OK
+SUB_01:    ret         ; OK (_は2文字目以降に使用可)
+@START:    nop         ; OK (@ で始まるラベル)
+_LABEL:    nop         ; NG (先頭が _ は不可)
+HL:        nop         ; NG (予約語)
+
+LOOP: dec b
+   jp nz, LOOP
+```
+
+### 式の評価
+
+オペランドには数式を記述できます。演算子の優先順位はC言語準拠です（上ほど優先順位が低い）。
+
+| 演算子         | 説明     |
+| ----------- | ------ |
+| `\|`        | ビットOR  |
+| `^`         | ビットXOR |
+| `&`         | ビットAND |
+| `<<` `>>`   | 左/右シフト |
+| `+` `-`     | 加減算    |
+| `*` `/` `%` | 乗除算・剰余 |
+
+* `/` は**整数除算（切り捨て）**です（例: `7 / 2` → `3`）。ゼロ除算はアセンブルエラーになります。
+* 単項演算子として `-`（負号）・`~`（ビットNOT）が使用できます。
+* 括弧 `()` で優先順位を明示できます。`$` は現在のアセンブルアドレス（PC）を表します。
+
+```asm
+ld a, (TABLE + 1)
+dw END_ADDR - START_ADDR
+ld a, 0xFF & ~0x80    ; ビット7をクリア
+dw TABLE >> 8         ; 上位バイトを取り出す
+jr $                  ; 無限ループ（$ は JR 命令自身のアドレス）
+db $ - START          ; START からのバイト数を埋め込む
+ds 16 - ($ & 0x0F)    ; 16バイト境界まで埋める
+```
+
+## Pythonモジュールとしての使用
+
+Pythonのソースから pz80 をインポートして使用する例です。
+
+### 公開API 一覧
+
+| シンボル                                                                                                        | 種別  | 概要                    |
+| ----------------------------------------------------------------------------------------------------------- | --- | --------------------- |
+| `assemble(source)`                                                                                          | 関数  | アセンブリソース文字列をバイト列に変換   |
+| `disassemble(data, start_address=0, data_regions=None, m1_handler=None, label_addresses=None, strmap=None)` | 関数  | バイト列をアセンブリ文字列リストに変換   |
+| `read_chunks(source)`                                                                                       | 関数  | バイナリファイルを整数リストとして読み込む |
+| `write_chunks(dest, data)`                                                                                  | 関数  | 整数リストをバイナリファイルに書き出す   |
+| `walk(data, start=0, extra_entries=None, valid_ranges=None, m1_handler=None)`                               | 関数  | 制御フローグラフでデータ領域を検出     |
+| `Asm`                                                                                                       | クラス | アセンブラ本体 (詳細制御用)       |
+| `Disasm`                                                                                                    | クラス | 逆アセンブラ本体 (詳細制御用)      |
+| `Z80`                                                                                                       | クラス | Z80命令テーブル・予約語の参照      |
+| `__version__`                                                                                               | 文字列 | pz80 のバージョン           |
+
+#### Asm クラスの主なメソッド
+
+| メソッド                               | 概要                                  |
+| ---------------------------------- | ----------------------------------- |
+| `assemble_lines(lines, file=None)` | 行リスト (`list[str]`) からアセンブル          |
+| `assemble_chunks(chunks)`          | 複数チャンク `[(識別子, 行リスト), ...]` からアセンブル |
+| `exec(name)`                       | ソースファイルを読み込んでアセンブル                  |
+
+戻り値はアセンブル済みリストで、各要素は `{"line": int, "file": str, "asm": list, "base": int, "offset": int, "opcode": list}` 形式の辞書です。
+
+#### Disasm クラスの主なメソッド・属性
+
+| 名前                          | 種別    | 概要                                             |
+| --------------------------- | ----- | ---------------------------------------------- |
+| `exec(start, images, size)` | メソッド  | バイナリイメージを逆アセンブル                                |
+| `op2asm(adr, opcode)`       | メソッド  | 1命令のオペコードを文字列化                                 |
+| `m1_handler`                | 属性    | M1サイクル復号ハンドラー `(addr, byte) -> byte`（暗号化ROM対応） |
+| `label_addresses`           | 属性    | 強制的にラベルを付与するアドレスのリスト（NMI 等の参照なしエントリ用）          |
+| `datamap`                   | プロパティ | データ領域 `[[start, end], ...]` の設定                |
+| `cpu.strmap`                | 属性    | バイト値 → 表示文字の256要素タプル                           |
+
+#### Z80 クラスの主な属性
+
+| 名前         | 種別    | 概要                               |
+| ---------- | ----- | -------------------------------- |
+| `reserved` | プロパティ | 予約語 (レジスタ・ニーモニック・疑似命令) のソート済みリスト |
+| `asm_map`  | プロパティ | アセンブラ用マップ (ニーモニック → 命令情報)        |
+| `op_map`   | プロパティ | 逆アセンブラ用マップ (オペコード → 命令情報)        |
+
+#### walk のエントリポイント・シンボル名
+
+`walk()` の `extra_entries` には以下のシンボル名 (文字列) または整数アドレスを指定できます。
+
+| シンボル             | アドレス     | シンボル           | アドレス     |
+| ---------------- | -------- | -------------- | -------- |
+| `RESET` / `RST0` | `0x0000` | `RST4`         | `0x0020` |
+| `RST1`           | `0x0008` | `RST5`         | `0x0028` |
+| `RST2`           | `0x0010` | `RST6`         | `0x0030` |
+| `RST3`           | `0x0018` | `RST7` / `IM1` | `0x0038` |
+|                  |          | `NMI`          | `0x0066` |
+
+### バイナリファイルの読み込み
+
+`read_chunks()` はバイナリファイルを整数リストとして読み込む汎用ユーティリティです。
+
+```python
+from pz80 import read_chunks
+
+# 単一ファイル
+data = read_chunks("rom.bin")  # → list[int]
+
+# 複数ファイルをアドレス指定で配置
+data = read_chunks([
+    ("smc1f",   0x0000),
+    ("smc2f",   0x0800),
+    ("smc3f",   0x1000),
+    ("smc8f",   0x3800),
+])  # → list[int] (アドレス間のギャップは 0x00 で埋められる)
+```
+
+読み込んだリストはPythonで直接解析・加工できます。
+
+```python
+# パターン探索の例: 'A''@' で始まり 'E''$' で終わるブロックを検出
+data = read_chunks("rom.bin")
+A, AT = ord('A'), ord('@')
+E, DOLLAR = ord('E'), ord('$')
+
+for i in range(len(data) - 1):
+    if data[i] == A and data[i + 1] == AT:
+        for j in range(i + 2, len(data) - 1):
+            if data[j] == E and data[j + 1] == DOLLAR:
+                print(f"0x{i:04X} - 0x{j + 1:04X}")
+                break
+```
+
+`write_chunks()` と組み合わせると read → 加工 → write のワークフローが完結します。
+
+```python
+from pz80 import read_chunks, write_chunks
+
+# ROM読み込み・加工・書き出し
+data = read_chunks([("smc1f", 0x0000), ("smc2f", 0x0800)])
+data[0x0123] = 0x00   # NOP に差し替え（パッチ）
+write_chunks("patched.bin", data)
+
+# 元のROM単位に分割して書き出し
+write_chunks([
+    ("smc1f_patched", 0x0000, 0x07FF),
+    ("smc2f_patched", 0x0800, 0x0FFF),
+], data)
+```
+
+### アセンブル
+
+```python
+from pz80 import assemble
+
+source_code = """
+    ORG 0x100
+    LD A, 42
+    RET
+"""
+# ソースコードをアセンブルしてバイト列を取得
+binary_data = assemble(source_code)
+```
+
+#### Asm クラスを使った詳細制御
+
+`Asm` クラスを直接使うと、行リストや複数チャンクからのアセンブルが可能です。
+
+```python
+from pz80 import Asm
+
+# 行リストからアセンブル
+lines_1 = ["ORG 0x100", "LD A, 42", "RET"]
+lines_2 = ["ORG 0x200", "CALL 0x300", "HALT"]
+
+result = Asm().assemble_lines(lines_1)
+
+# エラーメッセージにソースを識別する文字列を割り当てておくと
+# 複数のassemble_lines()使用時のエラー発生時にエラー箇所が特定しやすくなる
+result = Asm().assemble_lines(lines_1, file="main_code")
+result = Asm().assemble_lines(lines_2, file="sub_code")
+
+# ファイル名指定で読み込み
+result = Asm().exec("main.asm")
+```
+
+#### 複数チャンクの連結アセンブル
+
+`assemble_chunks()` は `(文字列, Python処理系)` のタプルリストを受け取り、すべてを連結してアセンブルします。Python 上で実装した関数をアセンブル時に動作させることでアセンブルの拡張機能をPythonで実現できます。
+
+```python
+from pz80 import Asm
+
+def include(filename):
+    with open(filename, encoding="utf-8") as f:
+        return f.readlines()
+
+def djnz_loop(count, body):
+    """Python関数によるマクロ風記述"""
+    return [
+        f"    LD B, {count}",
+        "LOOP:",
+        *body,
+        "    DJNZ LOOP",
+    ]
+
+def embed_binary(filename):
+    """バイナリファイルを DB 行のリストに変換する"""
+    from pz80 import read_chunks
+    return [f"    DB 0x{b:02X}" for b in read_chunks(filename)]
+
+chunks = [
+    ("header.asm", include("header.asm")),  # 第1要素は第2要素（Python処理系）を識別するための文字列
+                                            # 便宜上ファイル名と同じ文字列を使っているが、
+                                            # ファイル名との依存関係はない。
+    ("loop_macro", djnz_loop(10, ["    NOP"])),
+    ("bootcode",   include("main.asm")),
+    ("font_data",  embed_binary("font.bin")),
+]
+result = Asm().assemble_chunks(chunks)
+```
+
+各チャンクに含まれる第1要素の文字列はエラーメッセージ出力時に表示するため、各チャンクを連結後でもエラー箇所を特定できます。
+
+```
+Byte value 256 out of range on line 7 in bootcode (expected -128 to 255)
+```
+
+### 逆アセンブル
+
+```python
+from pz80 import disassemble
+
+# バイト列を逆アセンブルして命令リストを取得
+binary_data = b'\x3E\x2A\xC9'
+instructions = disassemble(binary_data, start_address=0x100)
+for line in instructions:
+    print(line)
+
+# データ領域を指定して逆アセンブル
+instructions = disassemble(binary_data, start_address=0x100,
+                           data_regions=[[0x8000, 0x80FF]])
+
+# 暗号化ROMをM1ハンドラーで復号しながら逆アセンブル
+def decrypt(address, byte):
+    return byte ^ 0x55
+
+instructions = disassemble(binary_data, m1_handler=decrypt)
+
+# エントリポイントにラベルを強制付与（NMI など参照のないアドレス用）
+# walk() の extra_entries と同じリストを渡すと一貫したラベル付けになる
+# 整数アドレスのほか、シンボル名 (NMI 等) も指定できる
+instructions = disassemble(binary_data, label_addresses=[0x0020, "NMI"])
+
+# キャラクターコード表を指定（データ領域の db コメント [文字] に反映）
+from pz80 import Z80
+chr_table = list(Z80().strmap)
+chr_table[0xC7] = "@"          # 0xC7 を '@' として表示
+instructions = disassemble(binary_data, data_regions=[[0x8000, 0x80FF]],
+                           strmap=tuple(chr_table))
+```
+
+### データ領域検出 (walk)
+
+```python
+from pz80 import walk
+
+with open("rom.bin", "rb") as f:
+    binary = f.read()
+
+# CFGトレースでデータ領域を検出
+regions = walk(binary, start=0x0000, extra_entries=["NMI", "IM1"])
+print(regions)
+# → [[0x1000, 0x12FF], [0x2000, 0x2FFF]]
+```
+
+`extra_entries` にはシンボル名（`"NMI"`, `"IM1"` など）と整数アドレスを混在して指定できます。
+
+```python
+# disasm と組み合わせてデータ領域を正しく逆アセンブル
+from pz80 import walk, Disasm
+
+with open("rom.bin", "rb") as f:
+    binary = f.read()
+
+regions = walk(binary, start=0x0000, extra_entries=["NMI"])
+
+d = Disasm()
+d.datamap = regions
+result = d.exec(0x0000, list(binary), len(binary))
+```
+
+#### 複数バイナリファイルを異なるアドレスに配置する場合
+
+`read_chunks()` と `valid_ranges` を組み合わせることで、ファイル間のギャップ領域を除外した正確な解析ができます。
+
+```python
+import os
+from pz80 import read_chunks, walk, Disasm
+
+bins = [
+    ("smc1f",   0x0000),
+    ("smc2f",   0x0800),
+    ("smc3f",   0x1000),
+    ("smc8f",   0x3800),
+]
+
+# 各ファイルを指定アドレスに配置した images を取得
+images = read_chunks(bins)
+
+# valid_ranges: 各ファイルのアドレス範囲 (ファイルサイズから算出)
+valid_ranges = [[addr, addr + os.path.getsize(path) - 1] for path, addr in bins]
+
+# ギャップを除いたデータ領域を検出
+regions = walk(images, start=0x0000, extra_entries=["NMI", "IM1"],
+               valid_ranges=valid_ranges)
+
+# 逆アセンブルにも適用
+d = Disasm()
+d.datamap = regions
+result = d.exec(0x0000, images, len(images))
+```
+
+### 暗号化バイナリーファイルの逆アセンブル (M1ハンドラー)
+
+`m1_handler` を暗号化バイナリーファイルの復号化処理に利用できます（暗号化のロジックによる）。
+
+設定した関数はオペコードバイト（プレフィックス含む）のフェッチ時のみ呼ばれ、即値やディスプレースメントなどのオペランドバイトには呼ばれません。
+
+`walk()` と `disassemble()` の両方に `m1_handler` を渡すことで、データ領域検出から逆アセンブルまで一貫して復号できます。`label_addresses` に `walk()` と同じエントリポイントを渡せば、NMI など参照のないアドレスにもラベルが付き一貫します。
+
+```python
+from pz80 import Disasm, read_chunks, walk, disassemble
+
+data = read_chunks("encrypted_rom.bin")
+
+def decrypt(address, byte):
+    # アドレスとバイト値から復号キーを導出する例
+    key = (address & 1) ^ ((byte & 0x80) >> 7)
+    return byte ^ key
+
+# エントリポイント（walk と disassemble で共通、シンボル名と整数の混在可）
+entries = ["NMI", 0x0020]
+
+# CFGトレースで暗号化ROMのデータ領域を検出
+regions = walk(data, start=0x0000, extra_entries=entries, m1_handler=decrypt)
+
+# 同じ entries をラベル付与にも流用できる（解決不要）
+lines = disassemble(data, data_regions=regions, m1_handler=decrypt,
+                    label_addresses=entries)
+```
+
+M1ハンドラーは `(address: int, byte: int) -> int` の形式で定義します。Z80のM1フェッチ規則に従い、以下のバイトにのみ適用されます：
+
+| 命令パターン                     | M1対象バイト                                  |
+| -------------------------- | ---------------------------------------- |
+| 通常命令                       | バイト0のみ                                   |
+| プレフィックス命令 (CB/DD/FD/ED xx) | バイト0・1                                   |
+| DDCB/FDCB命令 (DD CB d op)   | バイト0・1のみ（バイト2のディスプレースメント・バイト3のオペコードは対象外） |
+
+> **補足: 元データは破壊されません**
+> `m1_handler` の戻り値（復号結果）は逆アセンブル出力にのみ反映され、入力した `data`（`read_chunks()` で構築した images など）は書き換えられません。内部で常にコピーに対して復号を適用するため、同じ `data` を `walk()` と `disassemble()` に続けて渡しても、一方の M1 復号が他方に影響することはありません。
+
+## ライセンス
+
+本プロジェクトは [MIT License](LICENSE) の下で公開されています。
