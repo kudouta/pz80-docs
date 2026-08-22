@@ -58,13 +58,15 @@ C:\>
 
 ```bash
 C:\>pz80 asm --help
-usage: pz80 asm [-h] -f FILE -o OUTPUT [-s SIZE]
+usage: pz80 asm [-h] -f FILE -o OUTPUT [-s SIZE] [-D DEFINE]
 
 options:
   -h, --help           show this help message and exit
   -f, --file FILE      asm file
   -o, --output OUTPUT  output file(bin)
   -s, --size SIZE      *option* : output file(bin) size
+  -D, --define DEFINE  symbol definition for conditional assembly (repeatable, merged left to
+                       right). NAME=VALUE, NAME (=1), or a Python dict. example: -D NOSCORE=1
 
 C:\>
 ```
@@ -80,6 +82,7 @@ pz80 asm -f source.asm -o output.bin
 * `-f`, `--file`: 入力アセンブリファイル（必須）
 * `-o`, `--output`: 出力バイナリファイル（必須）
 * `-s`, `--size`: 出力ファイルサイズを指定（オプション）。指定サイズまで `0x00` でパディングします。
+* `-D`, `--define`: 条件アセンブル用のシンボル定義（複数指定可）。`NAME=VALUE` または Python の辞書リテラルで渡します（後述）。
 
 ### 逆アセンブラ (disasm)
 
@@ -136,7 +139,7 @@ pz80 disasm -i prg0.bin -i prg1.bin -i prg2.bin
 
 ```bash
 C:\>pz80 walk --help
-usage: pz80 walk [-h] [-i INPUT] [-c CONFIG] [-s START] [-e ADDR_OR_SYMBOL]
+usage: pz80 walk [-h] [-i INPUT] [-c CONFIG] [-s START] [-e ADDR_OR_SYMBOL] [--auto-entry]
 
 options:
   -h, --help            show this help message and exit
@@ -148,6 +151,7 @@ options:
                         start address (default: 0x0000)
   -e ADDR_OR_SYMBOL, --entry ADDR_OR_SYMBOL
                         additional entry point (address or: RESET/RST0-7/IM1/NMI)
+  --auto-entry          auto-detect entry points from dispatch idioms (jump tables etc.)
 
 C:\>
 ```
@@ -173,6 +177,7 @@ data = [
 * `-c`, `--config`: 設定ファイル（Python モジュール）。バイナリファイル配置（`bins`）・エントリポイント（`entry`・`start`）を記述できます（オプション）。
 * `-s`, `--start`: メインエントリポイント（デフォルト: `0x0000`、または `-c` の `start` 値）。CLI 指定が `-c` より優先。
 * `-e`, `--entry`: 追加エントリポイント（複数指定可）。シンボル名または16進数アドレスで指定。`-c` の `entry` とマージされます。
+* `--auto-entry`: ジャンプテーブル等からエントリポイントを自動抽出します（後述）。
 
 #### 設定ファイルを使ったバイナリファイル配置指定
 
@@ -233,9 +238,42 @@ pz80 disasm -i rom.bin -c config.py
 * `JP` / `JR` / `CALL` / `DJNZ`：直接アドレス指定の分岐・呼び出し。
 * `RST nn`：固定ベクタ（`0x0000`〜`0x0038`）へのサブルーチン呼び出しとして分岐先を追跡しつつ、後続命令も継続します。
 
+#### エントリポイントの自動抽出 (`--auto-entry`)
+
+`JP (HL)` のような間接分岐でトレースは停止します。分岐先はジャンプテーブル内の値なので、通常は `-e` で手動指定が必要です。`--auto-entry` は、**手書きアセンブラのディスパッチは書き方の定型句が有限個しかない**という前提に立ち、到達済みコードから定型句を認識してテーブル基底を逆算します。
+
+```bash
+pz80 walk -i rom.bin --auto-entry
+```
+
+```python
+# auto-entry: [sp-ret] @0x0278 タスク再開: 復帰先は実行時スタック依存のため静的解決不可
+# auto-entry: [jp-indirect] @0x02B1 table=0x038B stride=2 -> 0x3800 0x1000 0x3000 0x2000 0x0A7C
+# auto-entry: entry = -e 0x0000 -e 0x0066 -e 0x0A7C -e 0x1000 -e 0x2000 -e 0x3000 -e 0x3800
+data = [
+    [0x000B, 0x0065],
+    [0x02C8, 0x02E7],
+]
+```
+
+`# auto-entry:` 行は Python コメントなので、出力をそのまま設定ファイルに保存できます。抽出根拠が残るため、内容を確認したうえで `-e` に固定する使い方を想定しています。認識する定型句は以下のとおりです。
+
+| 定型句 | 扱い |
+| --- | --- |
+| `LD HL,tbl` → 添字加算 → `JP (HL)` / `JP (IX)` / `JP (IY)` | テーブルを読む |
+| テーブル基底が RAM 経由（`LD (ram),HL`、バイト単位の分割書き込み） | 書き込み元を逆引き |
+| `PUSH HL` + `RET`（戻り番地の偽装） | テーブルを読む |
+| `CALL disp` 直後にテーブルを埋め込み、`disp` 側が `POP HL` で取得 | 戻り番地をテーブル基底とする |
+| テーブル本体が `JP nnnn` の並び | 各スロット先頭をエントリにする |
+| `RST n`（到達コード中に実在する場合のみ） | ベクタを採用 |
+| `LD SP,HL` + `RET` / `RETN`（タスク再開） | 静的解決不可のため報告のみ |
+
+> **注意**: 誤ったエントリはデータをコードとして誤認させます。`--auto-entry` は既定では無効で、出力される抽出根拠を確認したうえで使ってください。
+
 #### アルゴリズムの限界
 
-* `JP (HL)` / `JP (IX)` / `JP (IY)` などの間接分岐は実行時の値が不明なため、分岐先を追跡できません。ジャンプテーブルやステートマシンで使われる場合、その先のコードを `-e` で手動指定する必要があります。
+* `JP (HL)` / `JP (IX)` / `JP (IY)` などの間接分岐は実行時の値が不明なため、分岐先を追跡できません。ジャンプテーブルやステートマシンで使われる場合、その先のコードを `-e` で手動指定するか、`--auto-entry` で抽出します。
+* `LD SP,HL` + `RET` によるタスク再開など、復帰先が実行時のスタック内容に依存する分岐は静的に解決できません。`--auto-entry` は該当箇所を報告するのみです。
 * IM2（割り込みモード2）のベクタテーブル経由の呼び出しは `-e` で手動指定が必要です。
 
 ## 設定ファイル詳細
@@ -459,15 +497,78 @@ ld a, -1      ; 負数（0xFF に変換）
 | DW / DEFW | ワードデータ定義         | dw 0x1234, LABEL     |
 | DS / DEFS | 指定バイト数をfill値で埋める | ds 16, 0xFF          |
 | END       | アセンブル終了（以降の行を無視） | end                  |
+| IF / ELSE / ENDIF | 条件アセンブル      | IF NOSCORE ... ENDIF |
 
-**EQU の制約:** 定義値は `0`〜`65535` の範囲です。右辺には数値リテラルと算術式のみ使用でき、他のラベルや EQU 定数を参照することはできません。
+**EQU の制約:** 定義値は `0`〜`65535` の範囲です。右辺では**既に定義済みの EQU 定数を参照できます**（後方参照）。前方参照とラベル参照はできません。
 
 ```asm
 WIDTH:  EQU 8
 HEIGHT: EQU 8
-SIZE:   EQU 8 * 8       ; OK（数値リテラルと算術式）
-AREA:   EQU WIDTH * HEIGHT  ; NG（他シンボルの参照は不可）
+SIZE:   EQU 8 * 8           ; OK（数値リテラルと算術式）
+AREA:   EQU WIDTH * HEIGHT  ; OK（定義済み EQU の参照）
+BIG:    EQU AREA > 32       ; OK（比較演算子も使える）
+
+AHEAD:  EQU LATER * 2       ; NG（前方参照）
+LATER:  EQU 8
+ADDR:   EQU LABEL_0980      ; NG（ラベルのアドレスは参照不可）
 ```
+
+前方参照とラベル参照ができないのは、EQU の値が `DS` / `DB` のサイズに影響し、それがアドレスに影響するためです。前方参照を許すと「値を決めるためにアドレスが要り、アドレスを決めるために値が要る」という循環になり得ます。ラベルのアドレスも Pass 1 まで確定せず、EQU の置換はそれより前に行われます。
+
+#### 条件アセンブル (IF / ELSE / ENDIF)
+
+条件が偽のブロックは、アセンブル結果に一切含まれません。ラベル定義も ORG も無効になります。
+
+```asm
+IF NOSCORE
+    LD  de, LABEL_NOSCORE
+ELSE
+    LD  de, LABEL_0D5F      ; score
+ENDIF
+```
+
+フラグは `-D` でコマンドラインから渡します。複数指定した場合は左から順にマージされます（同じキーは後勝ち）。
+
+```bash
+pz80 asm -f mc.asm -o mc.bin -D NOSCORE=1
+pz80 asm -f mc.asm -o mc.bin -D NOSCORE=1 -D TEXTTEST=0
+pz80 asm -f mc.asm -o mc.bin -D NOSCORE            # 値を省略すると 1
+```
+
+値は `0x` / `0b` 表記も使えます（`-D ADDR=0x8000`）。
+
+多数まとめて渡すときは Python の辞書リテラルも使えます。ただし `{`・`}`・空白をシェルが解釈するため、**引用符で囲む必要があります**。
+
+```bash
+pz80 asm -f mc.asm -o mc.bin -D '{"NOSCORE": 1, "TEXTTEST": 0}'   # bash
+pz80 asm -f mc.asm -o mc.bin -D "{'NOSCORE': 1, 'TEXTTEST': 0}"   # cmd
+```
+
+> 引用符を付けずに `-D {"A":1,"B":2}` と書くとシェルのブレース展開が働き、まったく別の引数に化けます。手打ちでは `NAME=VALUE` 形式を使ってください。
+
+`-D` で渡した値は、ソース先頭に `NOSCORE: EQU 1` を書いたのと同じ扱いになります。辞書リテラルは `ast.literal_eval` で解釈するため、コードは実行されません。値は整数のみです。
+
+**条件式の制約:**
+
+`IF` は行の有無を変えるため、それ以降のすべてのアドレスに影響します。したがって条件は**アドレスが確定する前**に評価できなければならず、参照できるのは既に定義済みの `EQU` 定数だけです。
+
+```asm
+VAL: EQU 8
+IF VAL          ; OK（定義済み EQU）
+IF LABEL_0980   ; NG（ラベルのアドレスは未確定）
+IF UNDEFINED    ; NG（未定義シンボルはエラー。IFDEF は用意していません）
+```
+
+条件式には比較演算子・論理演算子が使えます（[式の評価](#式の評価)を参照）。
+
+```asm
+IF NOSCORE                  ; 0 以外が真
+IF VAL == 8
+IF VAL > 4 && !DEBUG
+IF FLAGS & 0x04
+```
+
+到達しない枝の中の条件式は評価されないため、無効ブロック内で未定義シンボルを参照してもエラーにはなりません。
 
 ### ラベル
 
@@ -484,7 +585,8 @@ LOOP:      dec b       ; OK
 SUB_01:    ret         ; OK (_は2文字目以降に使用可)
 @START:    nop         ; OK (@ で始まるラベル)
 _LABEL:    nop         ; NG (先頭が _ は不可)
-HL:        nop         ; NG (予約語)
+HL:        nop         ; NG (予約語: レジスタ名)
+ORG:       nop         ; NG (予約語: 疑似命令名)
 
 LOOP: dec b
    jp nz, LOOP
@@ -494,17 +596,23 @@ LOOP: dec b
 
 オペランドには数式を記述できます。演算子の優先順位はC言語準拠です（上ほど優先順位が低い）。
 
-| 演算子         | 説明     |
-| ----------- | ------ |
-| `\|`        | ビットOR  |
-| `^`         | ビットXOR |
-| `&`         | ビットAND |
-| `<<` `>>`   | 左/右シフト |
-| `+` `-`     | 加減算    |
-| `*` `/` `%` | 乗除算・剰余 |
+| 演算子                    | 説明        |
+| ---------------------- | --------- |
+| `\|\|`                  | 論理OR      |
+| `&&`                   | 論理AND     |
+| `\|`                    | ビットOR     |
+| `^`                    | ビットXOR    |
+| `&`                    | ビットAND    |
+| `==` `!=`              | 等価比較      |
+| `<` `<=` `>` `>=`      | 大小比較      |
+| `<<` `>>`              | 左/右シフト    |
+| `+` `-`                | 加減算       |
+| `*` `/` `%`            | 乗除算・剰余    |
 
 * `/` は**整数除算（切り捨て）**です（例: `7 / 2` → `3`）。ゼロ除算はアセンブルエラーになります。
-* 単項演算子として `-`（負号）・`~`（ビットNOT）が使用できます。
+* 比較演算子と論理演算子は **0 か 1** を返します。0 以外がすべて真です。
+* 単項演算子として `-`（負号）・`~`（ビットNOT）・`!`（論理NOT）が使用できます。`~` と `!` は別物で、`~0` は `-1`、`!0` は `1` です。
+* 論理演算子は定数式なので**短絡評価しません**（右辺も必ず評価されます）。
 * 括弧 `()` で優先順位を明示できます。`$` は現在のアセンブルアドレス（PC）を表します。
 
 ```asm
@@ -515,6 +623,15 @@ dw TABLE >> 8         ; 上位バイトを取り出す
 jr $                  ; 無限ループ（$ は JR 命令自身のアドレス）
 db $ - START          ; START からのバイト数を埋め込む
 ds 16 - ($ & 0x0F)    ; 16バイト境界まで埋める
+db SIZE > 0x100       ; 比較結果は 0 か 1
+```
+
+比較・論理演算子は条件アセンブルと組み合わせると効きます。
+
+```asm
+IF  VERSION == 2 && !DEBUG
+    ...
+ENDIF
 ```
 
 ## Pythonモジュールとしての使用
@@ -837,6 +954,7 @@ M1ハンドラーは `(address: int, byte: int) -> int` の形式で定義しま
 | 通常命令                       | バイト0のみ                                   |
 | プレフィックス命令 (CB/DD/FD/ED xx) | バイト0・1                                   |
 | DDCB/FDCB命令 (DD CB d op)   | バイト0・1のみ（バイト2のディスプレースメント・バイト3のオペコードは対象外） |
+
 
 > **補足: 元データは破壊されません**
 > `m1_handler` の戻り値（復号結果）は逆アセンブル出力にのみ反映され、入力した `data`（`read_chunks()` で構築した images など）は書き換えられません。内部で常にコピーに対して復号を適用するため、同じ `data` を `walk()` と `disassemble()` に続けて渡しても、一方の M1 復号が他方に影響することはありません。
