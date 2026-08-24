@@ -36,20 +36,25 @@ pz80は下記の機能を持ちます。
 
 `pz80` コマンド（または `python -m pz80`）で使用します。
 
+> **本 README のヘルプ出力は Python 3.10 / 端末幅 90 桁で生成しています。**
+> `argparse` の出力形式は Python のバージョンで変わるため（3.13 以降は
+> `-f FILE, --file FILE` が `-f, --file FILE` と短縮されます）、
+> お使いの環境では表示が異なる場合があります。
+
 ```bash
 C:\>pz80
-usage: pz80 [-h] {walk,disasm,asm} ...
+usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.10
+Z80 assembler & disassembler v0.4.26
 
 positional arguments:
-  {walk,disasm,asm}
-    walk        Detect data regions in binary via CFG tracing
-    disasm      Z80 disassembler
-    asm         Z80 assembler
+  {disasm,walk,asm}
+    disasm           Z80 disassembler
+    walk             Detect data regions in binary via CFG tracing
+    asm              Z80 assembler
 
 options:
-  -h, --help    show this help message and exit
+  -h, --help         show this help message and exit
 
 C:\>
 ```
@@ -61,12 +66,15 @@ C:\>pz80 asm --help
 usage: pz80 asm [-h] -f FILE -o OUTPUT [-s SIZE] [-D DEFINE]
 
 options:
-  -h, --help           show this help message and exit
-  -f, --file FILE      asm file
-  -o, --output OUTPUT  output file(bin)
-  -s, --size SIZE      *option* : output file(bin) size
-  -D, --define DEFINE  symbol definition for conditional assembly (repeatable, merged left to
-                       right). NAME=VALUE, NAME (=1), or a Python dict. example: -D NOSCORE=1
+  -h, --help            show this help message and exit
+  -f FILE, --file FILE  asm file
+  -o OUTPUT, --output OUTPUT
+                        output file(bin)
+  -s SIZE, --size SIZE  *option* : output file(bin) size
+  -D DEFINE, --define DEFINE
+                        symbol definition for conditional assembly (repeatable, merged
+                        left to right). NAME=VALUE, NAME (=1), or a Python dict.
+                        example: -D NOSCORE=1
 
 C:\>
 ```
@@ -139,7 +147,8 @@ pz80 disasm -i prg0.bin -i prg1.bin -i prg2.bin
 
 ```bash
 C:\>pz80 walk --help
-usage: pz80 walk [-h] [-i INPUT] [-c CONFIG] [-s START] [-e ADDR_OR_SYMBOL] [--auto-entry]
+usage: pz80 walk [-h] [-i INPUT] [-c CONFIG] [-s START] [-e ADDR_OR_SYMBOL]
+                 [--auto-entry]
 
 options:
   -h, --help            show this help message and exit
