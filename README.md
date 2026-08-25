@@ -693,7 +693,7 @@ Pythonのソースから pz80 をインポートして使用する例です。
 
 #### 戻り値の形式
 
-戻り値はアセンブル済みリストで、ソース上の並び順に次の4種類の辞書が入ります。
+`assemble_lines()` / `assemble_chunks()` / `exec()` の戻り値はアセンブル済みリストで、ソース上の並び順に次の3種類の辞書が入ります。
 
 | 種類     | 判別方法           | キー                                                          |
 | ------ | -------------- | ----------------------------------------------------------- |
@@ -705,63 +705,7 @@ Pythonのソースから pz80 をインポートして使用する例です。
 
 消費された行は番地を占有しないため `base` / `offset` を持ちません。アドレスを求めるときは `"opcode"` か `"label"` を持つ要素だけを対象にしてください。
 
-アセンブル結果を一覧表示する専用の機能はありません。入力チャンクを `(識別子, 行番号)` で引けるようにしておくと、元のソース行（コメント込み）を添えたリスティングが作れます。
-
-```python
-chunks = [("struct.def", [...]), ("main.asm", [...])]
-result = Asm().assemble_chunks(chunks)
-
-source = {(n, i): ln.rstrip() for n, lines in chunks for i, ln in enumerate(lines, 1)}
-
-for p in result:
-    kind = p.get("kind", "label" if "label" in p else "")
-    addr = f"{p['base'] + p['offset']:04X}" if "kind" not in p else "    "
-    ops = " ".join(f"{b:02X}" for b in p.get("opcode", []))
-    print(f"{addr}  {ops:<12s} {kind:<9s} {source[(p['file'], p['line'])]}")
-```
-
-```
-ADDR  OPCODE       KIND      SOURCE
-      equ                    PLAYER: EQU 0xC000
-      equ                    PLAYER.hp: EQU 0xC002
-      org                            ORG 0x8000
-8000            label        START:
-8000  21 02 C0                       LD HL,PLAYER.hp  ; メンバ
-      if                             IF NOSCORE
-8003  00                             NOP
-      else                           ELSE
-      skipped                        HALT
-      endif                          ENDIF
-8004  C3 00 80                       JP START
-```
-
-#### バイナリの取り出し
-
-バイト列が欲しいだけなら `assemble()` を使ってください。**ソース文字列とチャンクリストの両方**を受け付けます。
-
-```python
-from pz80 import assemble
-
-data = assemble("    ORG 0x0000\n    DB 0x11, 0x22\n    ORG 0x0008\n    DB 0x33\n")
-data = assemble([("header.asm", [...]), ("main.asm", [...])])
-# b'\x11\x22\x00\x00\x00\x00\x00\x00\x33'  (9 バイト。ORG の隙間は 0x00)
-```
-
-`Asm` を直接使って戻り値も見たい場合は `to_bytes()` に渡します。
-
-```python
-from pz80 import Asm, to_bytes
-
-result = Asm().assemble_chunks(chunks)   # 行ごとの情報を見たいとき
-data = to_bytes(result)
-```
-
-戻り値は**行の並び**であってメモリイメージではありません。各行の配置先は `base + offset` で、`ORG` で飛ばした範囲は行として存在しないため、`opcode` を単純に連結すると隙間が詰まります。
-
-```python
-# NG: ORG の隙間が失われる（上の例なら 9 バイトではなく 3 バイトになる）
-data = [b for item in result if item.get("opcode") for b in item["opcode"]]
-```
+戻り値は**行の並び**であってメモリイメージではありません。バイト列が欲しいだけなら `assemble()` か `to_bytes()` を使ってください（「[アセンブル](#アセンブル)」を参照）。行ごとの情報を使ってリスティングを組む例は「[アセンブル結果の一覧表示](#アセンブル結果の一覧表示)」にあります。
 
 #### Disasm クラスの主なメソッド・属性
 
@@ -860,6 +804,13 @@ source_code = """
 binary_data = assemble(source_code)
 ```
 
+`assemble()` はソース文字列のほか、後述する**チャンクリスト**も受け付けます。どちらの場合も配置先の最小アドレスから最大アドレスまでを返し、`ORG` で飛ばした範囲は `0x00` で埋まります。
+
+```python
+data = assemble("    ORG 0x0000\n    DB 0x11, 0x22\n    ORG 0x0008\n    DB 0x33\n")
+# b'\x11\x22\x00\x00\x00\x00\x00\x00\x33'  (9 バイト)
+```
+
 #### Asm クラスを使った詳細制御
 
 `Asm` クラスを直接使うと、行リストや複数チャンクからのアセンブルが可能です。
@@ -880,6 +831,22 @@ result = Asm().assemble_lines(lines_2, file="sub_code")
 
 # ファイル名指定で読み込み
 result = Asm().exec("main.asm")
+```
+
+戻り値は行ごとの情報を持つリストです（形式は「[戻り値の形式](#戻り値の形式)」を参照）。バイト列にするには `to_bytes()` に渡します。
+
+```python
+from pz80 import Asm, to_bytes
+
+result = Asm().assemble_lines(lines_1)
+data = to_bytes(result)
+```
+
+戻り値は**行の並び**であってメモリイメージではありません。各行の配置先は `base + offset` で、`ORG` で飛ばした範囲は行として存在しないため、`opcode` を単純に連結すると隙間が詰まります。
+
+```python
+# NG: ORG の隙間が失われる（上の 9 バイトの例なら 3 バイトになる）
+data = [b for item in result if item.get("opcode") for b in item["opcode"]]
 ```
 
 #### 複数チャンクの連結アセンブル
@@ -942,6 +909,48 @@ Byte value 256 out of range on line 7 in macros.asm#2 (expected -128 to 255)
 識別子は文字列か `None` のみ受け付けます。`None` と空文字列は「識別子なし」として扱われ、`line 7` の形になります。
 
 第2要素は行の並び（リストやタプル）である必要があり、1 本の文字列を渡すとエラーになります（1 文字ずつイテレートされてしまうため。文字列から作る場合は `splitlines()` で分割してください）。
+
+#### アセンブル結果の一覧表示
+
+アセンブル結果を一覧表示する専用の機能はありません。ただし各行が `(識別子, 行番号)` を持つので、**入力チャンクを同じキーで引けるようにしておく**と、元のソース行（コメント込み）を添えたリスティングが作れます。
+
+チャンクを Python 側で組み立てる使い方では、渡したソースが実際にどう解釈されたかを確かめる手段としてこれが効きます。命令行の `asm` は `EQU` 置換**後**なのでシンボル名が失われますが、元のソース行を添えれば残ります。
+
+```python
+from pz80 import Asm
+
+chunks = [
+    ("struct.def", ["PLAYER: EQU 0xC000", "PLAYER.hp: EQU 0xC002", "NOSCORE: EQU 1"]),
+    ("main.asm",   include("main.asm")),
+]
+result = Asm().assemble_chunks(chunks)
+
+# (識別子, 行番号) -> 元のソース行
+source = {(n, i): ln.rstrip() for n, lines in chunks for i, ln in enumerate(lines, 1)}
+
+for p in result:
+    kind = p.get("kind", "label" if "label" in p else "")
+    addr = f"{p['base'] + p['offset']:04X}" if "kind" not in p else "    "
+    ops = " ".join(f"{b:02X}" for b in p.get("opcode", []))
+    print(f"{addr}  {ops:<12s} {kind:<9s} {source[(p['file'], p['line'])]}")
+```
+
+```
+ADDR  OPCODE       KIND      SOURCE
+      equ                    PLAYER: EQU 0xC000
+      equ                    PLAYER.hp: EQU 0xC002
+      org                            ORG 0x8000
+8000            label        START:
+8000  21 02 C0                       LD HL,PLAYER.hp  ; メンバ
+      if                             IF NOSCORE
+8003  00                             NOP
+      else                           ELSE
+      skipped                        HALT
+      endif                          ENDIF
+8004  C3 00 80                       JP START
+```
+
+`kind` を持つ行はバイトを生成しません。**`"skipped"` だけが条件アセンブルで偽と判定されて捨てられた行**で、`equ` / `org` / `if` / `else` / `endif`（疑似命令として消費された行）と区別できます。`-D` で条件を切り替えるビルドで、どちらの枝が生きたかを確かめられます。
 
 ### 逆アセンブル
 
