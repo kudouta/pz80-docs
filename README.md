@@ -45,7 +45,7 @@ pz80は下記の機能を持ちます。
 C:\>pz80
 usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.26
+Z80 assembler & disassembler v0.4.27
 
 positional arguments:
   {disasm,walk,asm}
@@ -661,7 +661,8 @@ Pythonのソースから pz80 をインポートして使用する例です。
 
 | シンボル                                                                                                        | 種別  | 概要                    |
 | ----------------------------------------------------------------------------------------------------------- | --- | --------------------- |
-| `assemble(source)`                                                                                          | 関数  | アセンブリソース文字列をバイト列に変換   |
+| `assemble(source)`                                                                                          | 関数  | アセンブリソース文字列またはチャンクリストをバイト列に変換 |
+| `to_bytes(result)`                                                                                          | 関数  | アセンブル済みリストをバイト列に変換    |
 | `disassemble(data, start_address=0, data_regions=None, m1_handler=None, label_addresses=None, strmap=None)` | 関数  | バイト列をアセンブリ文字列リストに変換   |
 | `read_chunks(source)`                                                                                       | 関数  | バイナリファイルを整数リストとして読み込む |
 | `write_chunks(dest, data)`                                                                                  | 関数  | 整数リストをバイナリファイルに書き出す   |
@@ -679,7 +680,88 @@ Pythonのソースから pz80 をインポートして使用する例です。
 | `assemble_chunks(chunks)`          | 複数チャンク `[(識別子, 行リスト), ...]` からアセンブル |
 | `exec(name)`                       | ソースファイルを読み込んでアセンブル                  |
 
-戻り値はアセンブル済みリストで、各要素は `{"line": int, "file": str, "asm": list, "base": int, "offset": int, "opcode": list}` 形式の辞書です。
+#### Asm クラスの主な属性
+
+アセンブル実行後に参照します。
+
+| 属性               | 概要                                                                       |
+| ---------------- | ------------------------------------------------------------------------ |
+| `labelmap`       | シンボル表 `[{"type": "equ"\|"label", "symbol": str, "value": str\|int}, ...]` |
+| `label2address`  | ラベルと確定アドレスの対応 `[{"label": str, "address": int}, ...]`                     |
+
+`labelmap` の `symbol` は大文字に正規化されます（シンボル名は大小文字を区別しません）。`value` は `equ` が文字列（評価後の10進）、`label` が整数です。
+
+#### 戻り値の形式
+
+戻り値はアセンブル済みリストで、ソース上の並び順に次の4種類の辞書が入ります。
+
+| 種類     | 判別方法           | キー                                                          |
+| ------ | -------------- | ----------------------------------------------------------- |
+| 命令行    | `"opcode"` を持つ | `line`, `file`, `asm`, `base`, `offset`, `opcode`, `fixups`  |
+| ラベル定義行 | `"label"` を持つ  | `line`, `file`, `label`, `base`, `offset`                    |
+| 消費された行 | `"kind"` を持つ   | `line`, `file`, `asm`, `kind`                                |
+
+`kind` は `"equ"` / `"org"` / `"if"` / `"else"` / `"endif"` / `"skipped"` のいずれかです。**`"skipped"` は条件アセンブルで偽と判定されて捨てられた行**で、疑似命令として消費された行と区別できます。
+
+消費された行は番地を占有しないため `base` / `offset` を持ちません。アドレスを求めるときは `"opcode"` か `"label"` を持つ要素だけを対象にしてください。
+
+アセンブル結果を一覧表示する専用の機能はありません。入力チャンクを `(識別子, 行番号)` で引けるようにしておくと、元のソース行（コメント込み）を添えたリスティングが作れます。
+
+```python
+chunks = [("struct.def", [...]), ("main.asm", [...])]
+result = Asm().assemble_chunks(chunks)
+
+source = {(n, i): ln.rstrip() for n, lines in chunks for i, ln in enumerate(lines, 1)}
+
+for p in result:
+    kind = p.get("kind", "label" if "label" in p else "")
+    addr = f"{p['base'] + p['offset']:04X}" if "kind" not in p else "    "
+    ops = " ".join(f"{b:02X}" for b in p.get("opcode", []))
+    print(f"{addr}  {ops:<12s} {kind:<9s} {source[(p['file'], p['line'])]}")
+```
+
+```
+ADDR  OPCODE       KIND      SOURCE
+      equ                    PLAYER: EQU 0xC000
+      equ                    PLAYER.hp: EQU 0xC002
+      org                            ORG 0x8000
+8000            label        START:
+8000  21 02 C0                       LD HL,PLAYER.hp  ; メンバ
+      if                             IF NOSCORE
+8003  00                             NOP
+      else                           ELSE
+      skipped                        HALT
+      endif                          ENDIF
+8004  C3 00 80                       JP START
+```
+
+#### バイナリの取り出し
+
+バイト列が欲しいだけなら `assemble()` を使ってください。**ソース文字列とチャンクリストの両方**を受け付けます。
+
+```python
+from pz80 import assemble
+
+data = assemble("    ORG 0x0000\n    DB 0x11, 0x22\n    ORG 0x0008\n    DB 0x33\n")
+data = assemble([("header.asm", [...]), ("main.asm", [...])])
+# b'\x11\x22\x00\x00\x00\x00\x00\x00\x33'  (9 バイト。ORG の隙間は 0x00)
+```
+
+`Asm` を直接使って戻り値も見たい場合は `to_bytes()` に渡します。
+
+```python
+from pz80 import Asm, to_bytes
+
+result = Asm().assemble_chunks(chunks)   # 行ごとの情報を見たいとき
+data = to_bytes(result)
+```
+
+戻り値は**行の並び**であってメモリイメージではありません。各行の配置先は `base + offset` で、`ORG` で飛ばした範囲は行として存在しないため、`opcode` を単純に連結すると隙間が詰まります。
+
+```python
+# NG: ORG の隙間が失われる（上の例なら 9 バイトではなく 3 バイトになる）
+data = [b for item in result if item.get("opcode") for b in item["opcode"]]
+```
 
 #### Disasm クラスの主なメソッド・属性
 
