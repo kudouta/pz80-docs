@@ -500,15 +500,7 @@ ld a, -1      ; 負数（0xFF に変換）
 >
 > 記法を増やすと、どれで書くかの判断が読み手に残り続けます。`$` は既に現在アドレスを表し、`%` は剰余演算子なので、受け入れるとしても意味の衝突を避ける調整が要ります。Python の整数リテラルに揃えておけば、`-D` で渡す値や設定ファイル（Python モジュール）の書き方とも一貫します。
 >
-> 引き換えに、**他のアセンブラ向けに書かれた既存ソースはそのままでは通りません**。ただしこれは**アセンブルの前段で変換すれば済む**話で、`assemble_chunks()` は行のリストを受け取るので変換関数を挟むだけです（`INCLUDE` を Python 関数で置き換えるのと同じ形）。
->
-> ```python
-> Asm().assemble_chunks([
->     ("main.asm", convert_literals(open("main.asm").readlines())),
-> ])
-> ```
->
-> アセンブラの文法を増やさずに済み、変換規則を自分の手元で調整できます。どの記法をどう読み替えるかはソースごとに違うため、その判断をアセンブラに埋め込まないほうが素直です。
+> 引き換えに、**他のアセンブラ向けに書かれた既存ソースはそのままでは通りません**。ただしこれはアセンブルの前段で数値リテラルを変換すれば済む話で、Python モジュールとして使う場合はその変換を挟めます（「[複数チャンクの連結アセンブル](#複数チャンクの連結アセンブル)」を参照）。
 
 ### 疑似命令
 
@@ -927,16 +919,24 @@ def embed_binary(filename):
     from pz80 import read_chunks
     return [f"    DB 0x{b:02X}" for b in read_chunks(filename)]
 
+def convert_literals(lines):
+    """他のアセンブラの数値表記を pz80 の形式へ読み替える"""
+    import re
+    return [re.sub(r"\$([0-9A-Fa-f]+)", r"0x\1", line) for line in lines]
+
 chunks = [
     ("header.asm", include("header.asm")),  # 第1要素は第2要素（Python処理系）を識別するための文字列
                                             # 便宜上ファイル名と同じ文字列を使っているが、
                                             # ファイル名との依存関係はない。
     ("loop_macro", djnz_loop(10, ["    NOP"])),
     ("bootcode",   include("main.asm")),
+    ("legacy.asm", convert_literals(include("legacy.asm"))),
     ("font_data",  embed_binary("font.bin")),
 ]
 result = Asm().assemble_chunks(chunks)
 ```
+
+チャンクは**行のリスト**なので、`convert_literals` のように**前段で変換を挟む**こともできます。`INCLUDE` やマクロと同じく「アセンブラの文法を増やさず、Python 側で処理する」形になります。どう読み替えるかはソースごとに違うため、その判断をアセンブラに埋め込まずに済みます。
 
 各チャンクに含まれる第1要素の文字列はエラーメッセージ出力時に表示するため、各チャンクを連結後でもエラー箇所を特定できます。
 
