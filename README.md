@@ -45,7 +45,7 @@ pz80は下記の機能を持ちます。
 C:\>pz80
 usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.29
+Z80 assembler & disassembler v0.4.30
 
 positional arguments:
   {disasm,walk,asm}
@@ -710,10 +710,10 @@ Asm().exec("mc.asm", defines={"NOSCORE": "0x01"})   # 値は文字列でもよ�
 
 | 属性               | 概要                                                                       |
 | ---------------- | ------------------------------------------------------------------------ |
-| `labelmap`       | シンボル表 `[{"type": "equ"\|"label", "symbol": str, "value": str\|int}, ...]` |
+| `labelmap`       | シンボル表 `[{"type": "equ"\|"label", "symbol": str, "value": int}, ...]`     |
 | `label2address`  | ラベルと確定アドレスの対応 `[{"label": str, "address": int}, ...]`                     |
 
-`labelmap` の `symbol` は大文字に正規化されます（シンボル名は大小文字を区別しません）。`value` は `equ` が文字列（評価後の10進）、`label` が整数です。
+`labelmap` の `symbol` は大文字に正規化されます（シンボル名は大小文字を区別しません）。`value` は `equ` / `label` とも整数です。ラベルのアドレスは Pass 2 で確定するため、アセンブル完了後に参照してください。
 
 > `Asm` にはこのほか `cpu` / `encoder` / `preprocessor` / `directive_handler` / `defined_labels` という属性もありますが、**内部実装の都合で持っているだけ**で API ではありません。予告なく変わるため依存しないでください。
 
