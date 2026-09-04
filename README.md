@@ -45,7 +45,7 @@ pz80は下記の機能を持ちます。
 C:\>pz80
 usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.30
+Z80 assembler & disassembler v0.4.31
 
 positional arguments:
   {disasm,walk,asm}
@@ -713,9 +713,16 @@ Asm().exec("mc.asm", defines={"NOSCORE": "0x01"})   # 値は文字列でもよ�
 | `labelmap`       | シンボル表 `[{"type": "equ"\|"label", "symbol": str, "value": int}, ...]`     |
 | `label2address`  | ラベルと確定アドレスの対応 `[{"label": str, "address": int}, ...]`                     |
 
-`labelmap` の `symbol` は大文字に正規化されます（シンボル名は大小文字を区別しません）。`value` は `equ` / `label` とも整数です。ラベルのアドレスは Pass 2 で確定するため、アセンブル完了後に参照してください。
+`value` は `equ` / `label` とも整数です。ラベルのアドレスは Pass 2 で確定するため、アセンブル完了後に参照してください。
 
-> `Asm` にはこのほか `cpu` / `encoder` / `preprocessor` / `directive_handler` / `defined_labels` という属性もありますが、**内部実装の都合で持っているだけ**で API ではありません。予告なく変わるため依存しないでください。
+**`symbol` の大小文字の扱いは `type` によって異なります。**
+
+* `equ` — **大小文字を区別しません。** `symbol` は大文字に正規化されます（`Val: EQU 5` を `VAL` として登録し、`LD A,val` からも参照できる）。ニーモニックが大小文字を区別しないことに合わせています。
+* `label` — **大小文字を区別します。** `symbol` はソースに書かれたままで、`Start` と `START` は別のラベルになります。
+
+`labelmap` と `label2address` は同じシンボル表を別の形で見せたものです。実体は 1 つなので、両者が食い違うことはありません。
+
+> `Asm` にはこのほか `symbols` / `cpu` / `encoder` / `preprocessor` / `directive_handler` という属性もありますが、**内部実装の都合で持っているだけ**で API ではありません。予告なく変わるため依存しないでください。
 
 #### 戻り値の形式
 
