@@ -45,7 +45,7 @@ pz80は下記の機能を持ちます。
 C:\>pz80
 usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.27
+Z80 assembler & disassembler v0.4.28
 
 positional arguments:
   {disasm,walk,asm}
