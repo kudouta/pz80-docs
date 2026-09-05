@@ -14,7 +14,7 @@
 C:\>pz80
 usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.34
+Z80 assembler & disassembler v0.4.35
 
 positional arguments:
   {disasm,walk,asm}
