@@ -47,7 +47,7 @@ ld a, -1      ; 負数（0xFF に変換）
 | DW / DEFW | ワードデータ定義         | dw 0x1234, LABEL     |
 | DS / DEFS | 指定バイト数をfill値で埋める | ds 16, 0xFF          |
 | END       | アセンブル終了（以降の行を無視） | end                  |
-| IF / ELSE / ENDIF | 条件アセンブル      | IF NOSCORE ... ENDIF |
+| IF / ELSEIF / ELSE / ENDIF | 条件アセンブル | IF NOSCORE ... ENDIF |
 
 > **`INCLUDE` / `INCBIN` / `MACRO` / `REPT` は疑似命令として実装しません。**
 > これらは [複数チャンクの連結アセンブル](python-api.md#複数チャンクの連結アセンブル) で Python 側から実現します。
@@ -75,7 +75,7 @@ ADDR:   EQU LABEL_0980      ; NG（ラベルのアドレスは参照不可）
 
 理由はアドレスの決まる順序にあります。EQU の値は `DS` / `DB` のサイズを決め、そのサイズがアドレスを決めます。ここで前方参照を許すと「値を決めるためにアドレスが要り、アドレスを決めるために値が要る」という循環になり得ます。ラベルのアドレスが確定するのは Pass 1 で、EQU の置換はそれより前です。
 
-### 条件アセンブル (IF / ELSE / ENDIF)
+### 条件アセンブル (IF / ELSEIF / ELSE / ENDIF)
 
 条件が偽のブロックは、アセンブル結果に一切含まれません。ラベル定義も ORG も無効になります。
 
@@ -86,6 +86,20 @@ ELSE
     LD  de, LABEL_0D5F      ; score
 ENDIF
 ```
+
+枝が 3 つ以上になるときは `ELSEIF` を使います。`ELSE` と同じく省略できます。
+
+```asm
+IF      VERSION == 1
+    LD  de, TABLE_V1
+ELSEIF  VERSION == 2
+    LD  de, TABLE_V2
+ELSE
+    LD  de, TABLE_DEFAULT
+ENDIF
+```
+
+採用されるのは**最初に条件が真になった枝だけ**です。それより後ろの `ELSEIF` は条件式を評価しません。`ELSE` より後ろには書けません。
 
 フラグは `-D` でコマンドラインから渡します。複数指定した場合は左から順にマージされます（同じキーは後勝ち）。
 
