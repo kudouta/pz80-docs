@@ -14,7 +14,7 @@
 C:\>pz80
 usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.37
+Z80 assembler & disassembler v0.4.38
 
 positional arguments:
   {disasm,walk,asm}
@@ -382,8 +382,11 @@ labels = {
     "NMI":   "VBLANK",      # キーはベクタ名でも整数アドレスでもよい
     0x0980:  "DRAW_SPRITE",
     0x3FE0:  "MSG_TABLE",
+    0x3FC0:  "StrA.D.1980",  # 英数字・`_`・`.` が使える
 }
 ```
+
+名前に使えるのは**英数字・`_`・`.`** です。`,` や `(` のようにトークンが切れてしまう文字を書くとエラーになります（そのまま通すと、出力は正しく見えるのに再アセンブルできない状態になるため）。
 
 ```
 0x3FAB 11 E0 3F     L_3FAB@DRAW_ROW:   LD de, 0x3FE0
