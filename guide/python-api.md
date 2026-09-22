@@ -96,7 +96,7 @@ Asm().exec("main.asm", defines={"DEBUG": "0x01"})   # 値は文字列でもよ�
 | `m1_handler`                | 属性    | M1サイクル復号ハンドラー `(addr, byte) -> byte`（暗号化ROM対応） |
 | `label_addresses`           | 属性    | 強制的にラベルを付与するアドレスのリスト（NMI 等の参照なしエントリ用）          |
 | `label_names`               | 属性    | `{アドレス: 名前}`。ラベルが `L_0066@NMI` の形になり、そこを指す 16 ビットオペランドも置き換わる |
-| `equ_names`                 | 属性    | `{アドレス: 名前 \| dict(r=…, w=…)}`。範囲外の定数に `EQU` で名前を付ける |
+| `equ_names`                 | 属性    | `{アドレス: 名前 \| {"r": …, "w": …}}`。範囲外の定数に `EQU` で名前を付ける |
 | `datamap`                   | プロパティ | データ領域 `[[start, end], ...]` の設定                |
 | `cpu.strmap`                | 属性    | バイト値 → 表示文字の256要素タプル                           |
 
@@ -388,10 +388,10 @@ instructions = disassemble(binary_data,
                            label_names={0x0980: "DRAW_SPRITE", "NMI": "VBLANK"})
 
 # 逆アセンブル範囲外の定数（RAM・I/O）は equ_names で。裸の名前で出る
-# 読み書きで役割が違うレジスタは dict(r=..., w=...) で分けられる
+# 読み書きで役割が違うレジスタは {"r": ..., "w": ...} で分けられる
 instructions = disassemble(binary_data,
                            equ_names={0x8000: "MirrorRam",
-                                      0xB000: dict(r="IrqEnable", w="NmiOn")})
+                                      0xB000: {"r": "IrqEnable", "w": "NmiOn"}})
 ```
 
 ## データ領域検出 (walk)

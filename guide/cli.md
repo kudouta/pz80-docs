@@ -14,7 +14,7 @@
 C:\>pz80
 usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.39
+Z80 assembler & disassembler v0.4.40
 
 positional arguments:
   {disasm,walk,asm}
@@ -109,7 +109,7 @@ pz80 disasm -i prg0.bin -i prg1.bin -i prg2.bin
 | `output`     | function | disasm        | カスタム出力関数。未指定時は `アドレス オペコード ラベル ニーモニック` 形式で標準出力。                                       |
 | `entry`      | list     | walk / disasm | 追加エントリポイント。シンボル名または整数アドレスで指定。walk では CLI の `-e` とマージ、disasm ではラベル付与（`L_xxxx:`）に流用される。 |
 | `labels`     | dict     | disasm        | `{アドレス: 名前}`。ラベルが `L_0066@NMI` の形になる。キーはシンボル名も可。逆アセンブル範囲内のみ。                         |
-| `equ`        | dict     | disasm        | `{アドレス: 名前}`。範囲外の定数（RAM・I/O）に `EQU` で名前を付ける。`dict(r=…, w=…)` で読み書きを分けられる。              |
+| `equ`        | dict     | disasm        | `{アドレス: 名前}`。範囲外の定数（RAM・I/O）に `EQU` で名前を付ける。`{"r": …, "w": …}` で読み書きを分けられる。            |
 | `m1_handler` | function | disasm / walk | M1サイクル復号ハンドラー `(address, byte) -> byte`。暗号化ROM対応。                                     |
 
 各属性の詳細な使用例は「[設定ファイル詳細](#設定ファイル詳細)」を参照してください。
@@ -430,12 +430,12 @@ RAM・I/O・ハードウェアレジスタのように**逆アセンブル範囲
 ```python
 equ = {
     0x8000: "MirrorRam",
-    0xB000: dict(r="IrqEnable", w="NmiOn"),   # 読み書きで役割が違う
-    0xB801: dict(w="SndVolume"),              # 書き専用
+    0xB000: {"r": "IrqEnable", "w": "NmiOn"},   # 読み書きで役割が違う
+    0xB801: {"w": "SndVolume"},                 # 書き専用
 }
 ```
 
-`dict(r=…, w=…)` と `{"r": …, "w": …}` はどちらで書いても同じです。読み書きを分ける必要がなければ、値は文字列 1 つで構いません。
+読み書きを分ける必要がなければ、値は文字列 1 つで構いません。`dict(r=…, w=…)` と書いても同じものになりますが、**ruff の `C408`（`Unnecessary dict() call`）に引っかかる**ので、設定ファイルを lint にかけるなら波括弧の方が無難です。
 
 ```asm
 MirrorRam: EQU 0x8000
