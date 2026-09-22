@@ -14,7 +14,7 @@
 C:\>pz80
 usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.35
+Z80 assembler & disassembler v0.4.36
 
 positional arguments:
   {disasm,walk,asm}
@@ -108,6 +108,7 @@ pz80 disasm -i prg0.bin -i prg1.bin -i prg2.bin
 | `chr`        | tuple    | disasm        | バイト値→表示文字の256要素タプル。未指定時は標準ASCIIテーブル（0x20〜0x7E）を使用。                                    |
 | `output`     | function | disasm        | カスタム出力関数。未指定時は `アドレス オペコード ラベル ニーモニック` 形式で標準出力。                                       |
 | `entry`      | list     | walk / disasm | 追加エントリポイント。シンボル名または整数アドレスで指定。walk では CLI の `-e` とマージ、disasm ではラベル付与（`L_xxxx:`）に流用される。 |
+| `labels`     | dict     | disasm        | `{アドレス: 名前}`。ラベルが `L_0066@NMI` の形になる。キーはシンボル名も可。                                        |
 | `m1_handler` | function | disasm / walk | M1サイクル復号ハンドラー `(address, byte) -> byte`。暗号化ROM対応。                                     |
 
 各属性の詳細な使用例は「[設定ファイル詳細](#設定ファイル詳細)」を参照してください。
@@ -371,6 +372,34 @@ entry = ["NMI", "IM1", 0x0018]  # シンボル名・整数アドレスの混在�
 ```
 
 `disasm` コマンドでは、同じ `entry` がラベル付与（`L_xxxx:`）に流用されます。NMI など逆アセンブル結果のコード中に参照のないエントリポイントにもラベルが付き、`walk` と一貫したラベル付けになります。
+
+## ラベル名 (`labels`)
+
+逆アセンブラが出すラベルに人間向けの名前を添えます。`disasm` 専用。
+
+```python
+labels = {
+    "NMI":   "VBLANK",      # キーはベクタ名でも整数アドレスでもよい
+    0x0980:  "DRAW_SPRITE",
+    0x3FE0:  "MSG_TABLE",
+}
+```
+
+```
+0x3FAB 11 E0 3F     L_3FAB@DRAW_ROW:   LD de, 0x3FE0
+0x3FB4 CD AB 3F                        CALL L_3FAB@DRAW_ROW
+0x3FE0 07           L_3FE0@MSG_TABLE:  db 0x07 ; [7]
+```
+
+**定義側と参照側の両方に、同じ綴りで出ます。** 呼び出し箇所を見ただけで何を呼んでいるか分かるので、定義行まで戻る必要がなくなります。
+
+名前を付けたアドレスには、**コード中に参照が無くてもラベルが付きます**。`LD de, 0x3FE0` のようにジャンプ以外から指されるデータの先頭に名前を付ける用途を想定しています。
+
+> **アドレスは名前に残ります**（`L_0066@NMI` であって `L_@NMI` ではありません）。
+>
+> `walk` と `--auto-entry` はラベル名からアドレスを読み戻しているので、アドレスを捨てると解析が成立しなくなります。区切りが `@` なのも同じ理由で、`_` や英数字を使うと `walk` 側の単語境界判定に掛かりません。
+>
+> なお**アセンブラはこの名前を解釈しません**。`L_0066@NMI` は不透明な識別子として扱われ、値は定義行の位置で決まります。出力に手を入れて番地がずれても、名前が古くなるだけでアセンブル結果は正しいままです。
 
 ## M1ハンドラー (`m1_handler`)
 

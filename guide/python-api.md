@@ -10,7 +10,7 @@ Pythonのソースから pz80 をインポートして使用する例です。
 | ----------------------------------------------------------------------------------------------------------- | --- | --------------------- |
 | `assemble(source)`                                                                                          | 関数  | アセンブリソース文字列またはチャンクリストをバイト列に変換 |
 | `to_bytes(result)`                                                                                          | 関数  | アセンブル済みリストをバイト列に変換    |
-| `disassemble(data, start_address=0, data_regions=None, m1_handler=None, label_addresses=None, strmap=None)` | 関数  | バイト列をアセンブリ文字列リストに変換   |
+| `disassemble(data, start_address=0, data_regions=None, m1_handler=None, label_addresses=None, strmap=None, label_names=None)` | 関数  | バイト列をアセンブリ文字列リストに変換   |
 | `read_chunks(source)`                                                                                       | 関数  | バイナリファイルを整数リストとして読み込む |
 | `write_chunks(dest, data)`                                                                                  | 関数  | 整数リストをバイナリファイルに書き出す   |
 | `walk(data, start=0, extra_entries=None, valid_ranges=None, m1_handler=None)`                               | 関数  | 制御フローグラフでデータ領域を検出     |
@@ -95,6 +95,7 @@ Asm().exec("main.asm", defines={"DEBUG": "0x01"})   # 値は文字列でもよ�
 | `op2asm(adr, opcode)`       | メソッド  | 1命令のオペコードを文字列化                                 |
 | `m1_handler`                | 属性    | M1サイクル復号ハンドラー `(addr, byte) -> byte`（暗号化ROM対応） |
 | `label_addresses`           | 属性    | 強制的にラベルを付与するアドレスのリスト（NMI 等の参照なしエントリ用）          |
+| `label_names`               | 属性    | `{アドレス: 名前}`。ラベルが `L_0066@NMI` の形になる            |
 | `datamap`                   | プロパティ | データ領域 `[[start, end], ...]` の設定                |
 | `cpu.strmap`                | 属性    | バイト値 → 表示文字の256要素タプル                           |
 
@@ -378,6 +379,11 @@ chr_table = list(Z80().strmap)
 chr_table[0xC7] = "@"          # 0xC7 を '@' として表示
 instructions = disassemble(binary_data, data_regions=[[0x8000, 0x80FF]],
                            strmap=tuple(chr_table))
+
+# ラベルに名前を添える（定義側と参照側の両方が L_0980@DRAW_SPRITE になる）
+# アドレスは名前に残る。walk と --auto-entry がラベル名からアドレスを読み戻すため
+instructions = disassemble(binary_data,
+                           label_names={0x0980: "DRAW_SPRITE", "NMI": "VBLANK"})
 ```
 
 ## データ領域検出 (walk)
