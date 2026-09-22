@@ -229,14 +229,23 @@ pz80 walk -i rom.bin --auto-entry
 ```
 
 ```python
-# auto-entry: [sp-ret] @0x0278 タスク再開: 復帰先は実行時スタック依存のため静的解決不可
-# auto-entry: [jp-indirect] @0x02B1 table=0x038B stride=2 -> 0x3800 0x1000 0x3000 0x2000 0x0A7C
-# auto-entry: entry = -e 0x0000 -e 0x0066 -e 0x0A7C -e 0x1000 -e 0x2000 -e 0x3000 -e 0x3800
+# auto-entry: [sp-ret] @0x00E6 task resume: return address depends on the runtime stack; cannot be resolved statically
+# auto-entry: [jp-indirect] @0x0111 table=0x0112 stride=2 -> 0x1000 0x2000 0x3000 0x0A7C
+# auto-entry: entry = -e 0x0000 -e 0x0038 -e 0x0066 -e 0x0A7C -e 0x1000 -e 0x2000 -e 0x3000
 data = [
-    [0x000B, 0x0065],
-    [0x02C8, 0x02E7],
+    [0x000B, 0x0037],
+    [0x0072, 0x007F],
+    [0x0112, 0x0141],
+    [0x015D, 0x03FF],
+    [0x0415, 0x0A7B],
+    [0x0A97, 0x0FFF],
+    [0x1023, 0x1FFF],
+    [0x201E, 0x2FFF],
+    [0x3026, 0x37FF],
 ]
 ```
+
+**最後の `entry =` 行が結果**で、その上の行は**抽出根拠**です。`[sp-ret]` は「静的に解決できなかった」という報告なのでエントリを生みません。`[jp-indirect]` がテーブルから 4 つ抽出し、残りはベクタと `-e` 指定ぶんです。
 
 `# auto-entry:` 行は Python コメントなので、出力をそのまま設定ファイルに保存できます。抽出根拠が残るため、内容を確認したうえで `-e` に固定する使い方を想定しています。認識する定型句は以下のとおりです。
 
@@ -400,32 +409,33 @@ entry = ["NMI", "IM1", 0x0018]  # シンボル名・整数アドレスの混在�
 ```python
 labels = {
     "NMI":   "VBLANK",      # キーはベクタ名でも整数アドレスでもよい
-    0x0980:  "DRAW_SPRITE",
-    0x3FE0:  "MSG_TABLE",
-    0x3FC0:  "StrA.D.1980",  # 英数字・`_`・`.` が使える
+    0x0100:  "DRAW_ROW",
+    0x0120:  "MSG_TABLE",
+    0x0140:  "StrA.D.1980",  # 英数字・`_`・`.` が使える
 }
 ```
 
 名前に使えるのは**英数字・`_`・`.`** です。`,` や `(` のようにトークンが切れてしまう文字を書くとエラーになります（そのまま通すと、出力は正しく見えるのに再アセンブルできない状態になるため）。
 
 ```
-0x3FAB 11 E0 3F     L_3FAB@DRAW_ROW:   LD de, 0x3FE0
-0x3FB4 CD AB 3F                        CALL L_3FAB@DRAW_ROW
-0x3FE0 07           L_3FE0@MSG_TABLE:  db 0x07 ; [7]
+0x0100 11 20 01     L_0100@DRAW_ROW:   LD de, L_0120@MSG_TABLE
+0x0103 CD 00 01                        CALL L_0100@DRAW_ROW
+0x0106 C9                              RET
+0x0120 07           L_0120@MSG_TABLE:  db 0x07 ; [.]
 ```
 
 **定義側と参照側の両方に、同じ綴りで出ます。** 呼び出し箇所を見ただけで何を呼んでいるか分かるので、定義行まで戻る必要がなくなります。
 
-名前を付けたアドレスには、**コード中に参照が無くてもラベルが付きます**。`LD de, 0x3FE0` のようにジャンプ以外から指されるデータの先頭に名前を付ける用途を想定しています。
+名前を付けたアドレスには、**コード中に参照が無くてもラベルが付きます**。`LD de, 0x0120` のようにジャンプ以外から指されるデータの先頭に名前を付ける用途を想定しています。
 
 **そのアドレスを指す 16 ビットオペランドもラベルに変わります。**
 
 ```asm
-LD de, L_3FE0@MSG_TABLE       ; labels に 0x3FE0 があるので置き換わる
-LD a,  (L_3FE0@MSG_TABLE)     ; 間接参照も同じ
-LD ix, L_3FE0@MSG_TABLE       ; 4バイト命令も同じ
+LD de, L_0120@MSG_TABLE       ; labels に 0x0120 があるので置き換わる
+LD a,  (L_0120@MSG_TABLE)     ; 間接参照も同じ
+LD ix, L_0120@MSG_TABLE       ; 4バイト命令も同じ
 
-LD bc, 0x0100                 ; labels に無いので数値のまま
+LD bc, 0x0200                 ; labels に無いので数値のまま
 ```
 
 対象は分岐以外の `LD` 22 命令（即値・間接の両方）です。

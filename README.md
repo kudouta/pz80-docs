@@ -68,6 +68,14 @@ START:              ; ラベル定義
 
 書ける構文の一覧は **[guide/language.md](guide/language.md)** を参照してください。
 
+## ソースコード内の言語 / Language in the source
+
+**コメントと docstring は日本語です。** 作者自身が保守しやすい形を優先しているため、英語へ変更する予定はありません。
+
+利用者から見える部分はすべて英語です。CLI のヘルプ・エラーメッセージ・`--auto-entry` の報告行、そして API の名前（関数名・引数名・キー名）が該当します。**`src/pz80` の文字列リテラルに日本語が無いことはテストで検査しています**（`tests/test_main.py::TestOutputLanguage`）。
+
+> **Note for non-Japanese readers**: comments and docstrings in `src/` are written in Japanese, by the author's deliberate choice, and will not be translated. Everything you interact with — CLI help, error messages, tool output, and all API names — is in English. A test enforces that no Japanese string reaches the user.
+
 ## ライセンス
 
 本プロジェクトは [MIT License](LICENSE) の下で公開されています。
