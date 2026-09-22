@@ -10,7 +10,7 @@ Pythonのソースから pz80 をインポートして使用する例です。
 | ----------------------------------------------------------------------------------------------------------- | --- | --------------------- |
 | `assemble(source)`                                                                                          | 関数  | アセンブリソース文字列またはチャンクリストをバイト列に変換 |
 | `to_bytes(result)`                                                                                          | 関数  | アセンブル済みリストをバイト列に変換    |
-| `disassemble(data, start_address=0, data_regions=None, m1_handler=None, label_addresses=None, strmap=None, label_names=None, equ_names=None)` | 関数  | バイト列をアセンブリ文字列リストに変換   |
+| `disassemble(data, start_address=0, data_regions=None, m1_handler=None, label_addresses=None, strmap=None, label_names=None, equ_names=None, valid_ranges=None)` | 関数  | バイト列をアセンブリ文字列リストに変換   |
 | `read_chunks(source)`                                                                                       | 関数  | バイナリファイルを整数リストとして読み込む |
 | `write_chunks(dest, data)`                                                                                  | 関数  | 整数リストをバイナリファイルに書き出す   |
 | `walk(data, start=0, extra_entries=None, valid_ranges=None, m1_handler=None)`                               | 関数  | 制御フローグラフでデータ領域を検出     |
@@ -98,6 +98,7 @@ Asm().exec("main.asm", defines={"DEBUG": "0x01"})   # 値は文字列でもよ�
 | `label_names`               | 属性    | `{アドレス: 名前}`。ラベルが `L_0066@NMI` の形になり、そこを指す 16 ビットオペランドも置き換わる |
 | `equ_names`                 | 属性    | `{アドレス: 名前 \| {"r": …, "w": …}}`。範囲外の定数に `EQU` で名前を付ける |
 | `datamap`                   | プロパティ | データ領域 `[[start, end], ...]` の設定                |
+| `valid_ranges`              | プロパティ | バイナリが実在する範囲 `[[start, end], ...]`。隙間を出力から除外する  |
 | `cpu.strmap`                | 属性    | バイト値 → 表示文字の256要素タプル                           |
 
 `cpu` は `Disasm` が保持する `Z80` インスタンスです。上記以外のメンバは内部実装なので依存しないでください。
@@ -393,7 +394,27 @@ instructions = disassemble(jump_rom, label_names={0x0004: "DRAW_SPRITE"})
 io_rom = b'\x3A\x00\xB0\x32\x00\xB0'    # LD a,(0xB000) / LD (0xB000),a
 instructions = disassemble(io_rom,
                            equ_names={0xB000: {"r": "IrqEnable", "w": "NmiOn"}})
+
+# バイナリが実在する範囲を指定（bins の隙間を出力から除外する）
+# walk() の valid_ranges と同じものを渡す。隙間の手前で org を出し直すので
+# 出力はそのまま再アセンブルできる
+gapped = b'\xC3\x08\x00\x76\x00\x00\x00\x00\x3E\x30\xC9\x00'
+instructions = disassemble(gapped, valid_ranges=[[0x0000, 0x0003],
+                                                 [0x0008, 0x000B]])
 ```
+
+### 行の無い番地を指す参照
+
+`JP L_8000` のように**逆アセンブル結果に行が無い番地**を指す参照には、先頭に `EQU` の定義が付きます。RAM へ飛ぶもの、命令の途中を指すもの、`valid_ranges` の隙間を指すものが該当します。
+
+```asm
+L_8000: EQU 0x8000
+org 0x0000
+    JP L_8000
+    HALT
+```
+
+定義が無いと `Undefined symbol` で再アセンブルできません。値は分かっているので `EQU` にしています。`equ_names` で同じ番地に名前を付けていても衝突しません（pz80 は値の同じ `EQU` を別名で定義できます）。
 
 ## データ領域検出 (walk)
 
@@ -450,11 +471,15 @@ valid_ranges = [[addr, addr + os.path.getsize(path) - 1] for path, addr in bins]
 regions = walk(images, start=0x0000, extra_entries=["NMI", "IM1"],
                valid_ranges=valid_ranges)
 
-# 逆アセンブルにも適用
+# 逆アセンブルにも適用。valid_ranges は disasm 側にも渡す
+# （渡さないと隙間の 0x00 が nop の列として出て walk と見え方が食い違う）
 d = Disasm()
 d.datamap = regions
+d.valid_ranges = valid_ranges
 result = d.exec(0x0000, images, len(images))
 ```
+
+隙間を挟むたびに `org` を出し直すので、出力はそのまま再アセンブルできます。命令の復号も区間の終端で止まるため、隙間のバイトを巻き込んだ命令ができることもありません。
 
 ## 暗号化バイナリーファイルの逆アセンブル (M1ハンドラー)
 
