@@ -95,7 +95,7 @@ Asm().exec("main.asm", defines={"DEBUG": "0x01"})   # 値は文字列でもよ�
 | `op2asm(adr, opcode)`       | メソッド  | 1命令のオペコードを文字列化                                 |
 | `m1_handler`                | 属性    | M1サイクル復号ハンドラー `(addr, byte) -> byte`（暗号化ROM対応） |
 | `label_addresses`           | 属性    | 強制的にラベルを付与するアドレスのリスト（NMI 等の参照なしエントリ用）          |
-| `label_names`               | 属性    | `{アドレス: 名前}`。ラベルが `L_0066@NMI` の形になる            |
+| `label_names`               | 属性    | `{アドレス: 名前}`。ラベルが `L_0066@NMI` の形になり、そこを指す 16 ビットオペランドも置き換わる |
 | `datamap`                   | プロパティ | データ領域 `[[start, end], ...]` の設定                |
 | `cpu.strmap`                | 属性    | バイト値 → 表示文字の256要素タプル                           |
 
@@ -382,6 +382,7 @@ instructions = disassemble(binary_data, data_regions=[[0x8000, 0x80FF]],
 
 # ラベルに名前を添える（定義側と参照側の両方が L_0980@DRAW_SPRITE になる）
 # アドレスは名前に残る。walk と --auto-entry がラベル名からアドレスを読み戻すため
+# 名前を付けたアドレスを指す LD de, nn なども L_3FE0@MSG_TABLE に置き換わる
 instructions = disassemble(binary_data,
                            label_names={0x0980: "DRAW_SPRITE", "NMI": "VBLANK"})
 ```
