@@ -14,7 +14,7 @@
 C:\>pz80
 usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.38
+Z80 assembler & disassembler v0.4.39
 
 positional arguments:
   {disasm,walk,asm}
@@ -108,7 +108,8 @@ pz80 disasm -i prg0.bin -i prg1.bin -i prg2.bin
 | `chr`        | tuple    | disasm        | バイト値→表示文字の256要素タプル。未指定時は標準ASCIIテーブル（0x20〜0x7E）を使用。                                    |
 | `output`     | function | disasm        | カスタム出力関数。未指定時は `アドレス オペコード ラベル ニーモニック` 形式で標準出力。                                       |
 | `entry`      | list     | walk / disasm | 追加エントリポイント。シンボル名または整数アドレスで指定。walk では CLI の `-e` とマージ、disasm ではラベル付与（`L_xxxx:`）に流用される。 |
-| `labels`     | dict     | disasm        | `{アドレス: 名前}`。ラベルが `L_0066@NMI` の形になる。キーはシンボル名も可。                                        |
+| `labels`     | dict     | disasm        | `{アドレス: 名前}`。ラベルが `L_0066@NMI` の形になる。キーはシンボル名も可。逆アセンブル範囲内のみ。                         |
+| `equ`        | dict     | disasm        | `{アドレス: 名前}`。範囲外の定数（RAM・I/O）に `EQU` で名前を付ける。`dict(r=…, w=…)` で読み書きを分けられる。              |
 | `m1_handler` | function | disasm / walk | M1サイクル復号ハンドラー `(address, byte) -> byte`。暗号化ROM対応。                                     |
 
 各属性の詳細な使用例は「[設定ファイル詳細](#設定ファイル詳細)」を参照してください。
@@ -421,6 +422,39 @@ LD bc, 0x0100                 ; labels に無いので数値のまま
 > `walk` と `--auto-entry` はラベル名からアドレスを読み戻しているので、アドレスを捨てると解析が成立しなくなります。区切りが `@` なのも同じ理由で、`_` や英数字を使うと `walk` 側の単語境界判定に掛かりません。
 >
 > なお**アセンブラはこの名前を解釈しません**。`L_0066@NMI` は不透明な識別子として扱われ、値は定義行の位置で決まります。出力に手を入れて番地がずれても、名前が古くなるだけでアセンブル結果は正しいままです。
+
+## 定数名 (`equ`)
+
+RAM・I/O・ハードウェアレジスタのように**逆アセンブル範囲の外**にあるアドレスへ名前を付けます。`disasm` 専用。
+
+```python
+equ = {
+    0x8000: "MirrorRam",
+    0xB000: dict(r="IrqEnable", w="NmiOn"),   # 読み書きで役割が違う
+    0xB801: dict(w="SndVolume"),              # 書き専用
+}
+```
+
+`dict(r=…, w=…)` と `{"r": …, "w": …}` はどちらで書いても同じです。読み書きを分ける必要がなければ、値は文字列 1 つで構いません。
+
+```asm
+MirrorRam: EQU 0x8000
+IrqEnable: EQU 0xB000
+NmiOn:     EQU 0xB000
+
+    org 0x0000
+    LD  hl, MirrorRam        ; 裸の名前（L_8000@ は付かない）
+    LD  a, (IrqEnable)       ; 読みなので IrqEnable
+    LD  (NmiOn), a           ; 書きなので NmiOn
+```
+
+**`labels` との使い分けは「貼る行があるか」です。** `labels` は逆アセンブル結果の行にラベルを付ける機構なので、範囲外のアドレスには定義を置く場所がありません。そちらに `labels` を書くとエラーになり、`equ` を使うよう促されます。
+
+`equ` は住所を名前に残しません（`L_8000@MirrorRam` ではなく `MirrorRam`）。住所は `EQU` の定義行にあり、手書きでも同じ場所だからです。
+
+読み書きの判定は命令の形で決まります。`LD a, (nn)` 系が読み、`LD (nn), a` 系が書き、`LD hl, nn` のような即値はどちらとも決まらないため `r` を先に見ます。片方しか名前が無ければ、もう一方でもその名前を使います。
+
+> 同じアドレスに `labels` と `equ` の両方があるときは、オペランドの置き換えは `equ` 側が優先されます。
 
 ## M1ハンドラー (`m1_handler`)
 
