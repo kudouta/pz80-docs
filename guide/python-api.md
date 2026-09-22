@@ -359,9 +359,9 @@ instructions = disassemble(binary_data, start_address=0x100)
 for line in instructions:
     print(line)
 
-# データ領域を指定して逆アセンブル
+# データ領域を指定して逆アセンブル（指定範囲は命令ではなく db になる）
 instructions = disassemble(binary_data, start_address=0x100,
-                           data_regions=[[0x8000, 0x80FF]])
+                           data_regions=[[0x0101, 0x0102]])
 
 # 暗号化ROMをM1ハンドラーで復号しながら逆アセンブル
 def decrypt(address, byte):
@@ -372,26 +372,27 @@ instructions = disassemble(binary_data, m1_handler=decrypt)
 # エントリポイントにラベルを強制付与（NMI など参照のないアドレス用）
 # walk() の extra_entries と同じリストを渡すと一貫したラベル付けになる
 # 整数アドレスのほか、シンボル名 (NMI 等) も指定できる
-instructions = disassemble(binary_data, label_addresses=[0x0020, "NMI"])
+instructions = disassemble(binary_data, start_address=0x0066,
+                           label_addresses=["NMI"])
 
 # キャラクターコード表を指定（データ領域の db コメント [文字] に反映）
 from pz80 import Z80
 chr_table = list(Z80().strmap)
 chr_table[0xC7] = "@"          # 0xC7 を '@' として表示
-instructions = disassemble(binary_data, data_regions=[[0x8000, 0x80FF]],
+instructions = disassemble(binary_data, data_regions=[[0x0000, 0x0002]],
                            strmap=tuple(chr_table))
 
-# ラベルに名前を添える（定義側と参照側の両方が L_0980@DRAW_SPRITE になる）
+# ラベルに名前を添える（定義側と参照側の両方が L_0004@DRAW_SPRITE になる）
 # アドレスは名前に残る。walk と --auto-entry がラベル名からアドレスを読み戻すため
-# 名前を付けたアドレスを指す LD de, nn なども L_3FE0@MSG_TABLE に置き換わる
-instructions = disassemble(binary_data,
-                           label_names={0x0980: "DRAW_SPRITE", "NMI": "VBLANK"})
+# 名前を付けたアドレスを指す LD de, nn なども同じ綴りに置き換わる
+jump_rom = b'\xC3\x04\x00\x00\x76'      # JP 0x0004 / NOP / HALT
+instructions = disassemble(jump_rom, label_names={0x0004: "DRAW_SPRITE"})
 
 # 逆アセンブル範囲外の定数（RAM・I/O）は equ_names で。裸の名前で出る
 # 読み書きで役割が違うレジスタは {"r": ..., "w": ...} で分けられる
-instructions = disassemble(binary_data,
-                           equ_names={0x8000: "MirrorRam",
-                                      0xB000: {"r": "IrqEnable", "w": "NmiOn"}})
+io_rom = b'\x3A\x00\xB0\x32\x00\xB0'    # LD a,(0xB000) / LD (0xB000),a
+instructions = disassemble(io_rom,
+                           equ_names={0xB000: {"r": "IrqEnable", "w": "NmiOn"}})
 ```
 
 ## データ領域検出 (walk)
