@@ -33,6 +33,8 @@ Pythonのソースから pz80 をインポートして使用する例です。
 * 戻り値の各要素の `"file"` キーに入る（リスティングを組むときの引き当てキー）
 
 ```python
+from pz80 import Asm
+
 Asm().assemble_lines(["ld a, 300"])
 # ValueError: Byte value 300 out of range on line 1 (expected -128 to 255)
 
