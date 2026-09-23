@@ -14,7 +14,7 @@
 C:\>pz80
 usage: pz80 [-h] {disasm,walk,asm} ...
 
-Z80 assembler & disassembler v0.4.51
+Z80 assembler & disassembler v0.4.52
 
 positional arguments:
   {disasm,walk,asm}
@@ -266,6 +266,22 @@ data = [
 * `JP (HL)` / `JP (IX)` / `JP (IY)` などの間接分岐は実行時の値が不明なため、分岐先を追跡できません。ジャンプテーブルやステートマシンで使われる場合、その先のコードを `-e` で手動指定するか、`--auto-entry` で抽出します。
 * `LD SP,HL` + `RET` によるタスク再開など、復帰先が実行時のスタック内容に依存する分岐は静的に解決できません。`--auto-entry` は該当箇所を報告するのみです。
 * IM2（割り込みモード2）のベクタテーブル経由の呼び出しは `-e` で手動指定が必要です。
+
+### 追えなかった分岐先の報告
+
+分岐先を復号できなかった場合、`# unresolved:` のコメント行で報告します。
+
+```
+# unresolved: 0x2000
+# unresolved: branch targets above could not be decoded.
+# unresolved: a ROM file may be missing from bins, or an entry is wrong.
+data = [
+    ...
+```
+
+**正常なら 1 行も出ません。** 手書きの Z80 コードは ROM の外へ分岐しないので、実 ROM では 0 件になります。**1 件でも出たら異常の合図**で、いちばん多い原因は `bins` に ROM ファイルを置き忘れたことです。上の例なら `0x2000` に置くはずのファイルが足りていません。
+
+`# auto-entry:` と同じ Python のコメントなので、出力をそのまま設定ファイルへ保存できます。
 
 # 設定ファイル詳細
 
