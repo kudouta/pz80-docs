@@ -33,10 +33,10 @@ Pythonのソースから pz80 をインポートして使用する例です。
 * 戻り値の各要素の `"file"` キーに入る（リスティングを組むときの引き当てキー）
 
 ```python
-Asm().assemble_lines(["    ld a, 300"])
+Asm().assemble_lines(["ld a, 300"])
 # ValueError: Byte value 300 out of range on line 1 (expected -128 to 255)
 
-Asm().assemble_lines(["    ld a, 300"], file="main_code")
+Asm().assemble_lines(["ld a, 300"], file="main_code")
 # ValueError: Byte value 300 out of range on line 1 in main_code (expected -128 to 255)
 ```
 
@@ -45,6 +45,8 @@ Asm().assemble_lines(["    ld a, 300"], file="main_code")
 `exec()` の `defines` は**条件アセンブル用のシンボル定義** `{名前: 値}` で、CLI の `-D` に対応します。ソース先頭に `名前: EQU 値` を前置したのと同じ扱いになるため、`IF` から参照でき、`labelmap` にも `equ` として現れます。
 
 ```python
+from pz80 import Asm
+
 Asm().exec("main.asm", defines={"DEBUG": 1})
 Asm().exec("main.asm", defines={"DEBUG": "0x01"})   # 値は文字列でもよい
 ```
@@ -125,6 +127,34 @@ Asm().exec("main.asm", defines={"DEBUG": "0x01"})   # 値は文字列でもよ�
 | `RST3`           | `0x0018` | `RST7` / `IM1` | `0x0038` |
 |                  |          | `NMI`          | `0x0066` |
 
+## 例を動かす準備
+
+以降の例は `rom.bin` や `main.asm` といった入力ファイルを使います。**この節を 1 回実行しておけば、後の例はそのまま貼って動きます。** 空のディレクトリで実行してください。
+
+```python
+import pathlib
+
+# 練習用の ROM（0x0123 に 'A' '@' … 'E' '$' を仕込んである）
+rom = bytearray(0x1000)
+rom[0x0000:0x0003] = bytes([0x3E, 0x2A, 0xC9])      # ld a, 0x2A / ret
+rom[0x0123:0x0129] = b"A@pz80E$"[:6]
+pathlib.Path("rom.bin").write_bytes(rom)
+pathlib.Path("encrypted_rom.bin").write_bytes(bytes(b ^ 0x55 for b in rom))
+pathlib.Path("font.bin").write_bytes(bytes(range(256)))
+
+# 2KB ずつに分けた ROM チップ
+for name, at in [("prg0.bin", 0x0000), ("prg1.bin", 0x0800),
+                 ("prg2.bin", 0x1000), ("prg3.bin", 0x1800)]:
+    pathlib.Path(name).write_bytes(bytes(rom[at % 0x1000:][:0x800]))
+
+# アセンブリソース
+pathlib.Path("main.asm").write_text("org 0x0000\nnop\nret\n", encoding="utf-8")
+pathlib.Path("header.asm").write_text("HEADER: equ 0x1234\n", encoding="utf-8")
+pathlib.Path("legacy.asm").write_text("ld a, $2A\nret\n", encoding="utf-8")
+pathlib.Path("main.asm").write_text(
+    "IF DEBUG\nnop\nELSE\nret\nENDIF\n", encoding="utf-8")
+```
+
 ## バイナリファイルの読み込み
 
 `read_chunks()` はバイナリファイルを整数リストとして読み込む汎用ユーティリティです。
@@ -147,6 +177,8 @@ data = read_chunks([
 読み込んだリストはPythonで直接解析・加工できます。
 
 ```python
+from pz80 import read_chunks
+
 # パターン探索の例: 'A''@' で始まり 'E''$' で終わるブロックを検出
 data = read_chunks("rom.bin")
 A, AT = ord('A'), ord('@')
@@ -194,7 +226,9 @@ binary_data = assemble(source_code)
 `assemble()` はソース文字列のほか、後述する**チャンクリスト**も受け付けます。どちらの場合も配置先の最小アドレスから最大アドレスまでを返し、`ORG` で飛ばした範囲は `0x00` で埋まります。
 
 ```python
-data = assemble("    ORG 0x0000\n    DB 0x11, 0x22\n    ORG 0x0008\n    DB 0x33\n")
+from pz80 import assemble
+
+data = assemble("ORG 0x0000\nDB 0x11, 0x22\nORG 0x0008\nDB 0x33\n")
 # b'\x11\x22\x00\x00\x00\x00\x00\x00\x33'  (9 バイト)
 ```
 
@@ -227,8 +261,8 @@ result = Asm().exec("main.asm")
 ```python
 from pz80 import Asm, to_bytes
 
-result = Asm().assemble_lines(lines_1)
-data = to_bytes(result)
+result = Asm().assemble_lines(["ld a, 0x2A", "ret"])
+data = to_bytes(result)          # b'\x3e\x2a\xc9'
 ```
 
 戻り値は**行の並び**であってメモリイメージではありません。各行の配置先は `base + offset` で、`ORG` で飛ばした範囲は行として存在しないため、`opcode` を単純に連結すると隙間が詰まります。
@@ -272,7 +306,7 @@ chunks = [
     ("header.asm", include("header.asm")),  # 第1要素は第2要素（Python処理系）を識別するための文字列
                                             # 便宜上ファイル名と同じ文字列を使っているが、
                                             # ファイル名との依存関係はない。
-    ("loop_macro", djnz_loop(10, ["    NOP"])),
+    ("loop_macro", djnz_loop(10, ["NOP"])),
     ("bootcode",   include("main.asm")),
     ("legacy.asm", convert_literals(include("legacy.asm"))),
     ("font_data",  embed_binary("font.bin")),
