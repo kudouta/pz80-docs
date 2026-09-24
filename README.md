@@ -1,5 +1,12 @@
 # pz80
 
+> **このリポジトリはアーカイブされました。** pz80 は **[kudouta/pz80](https://github.com/kudouta/pz80)** へ移り、
+> ソースコードを含めて公開されています。以下の内容は移転時点のもので、更新されません。
+>
+> **This repository is archived.** pz80 has moved to **[kudouta/pz80](https://github.com/kudouta/pz80)**, where the
+> source code is published as well. The content below is a snapshot and is no longer
+> updated.
+
 Z80用のツールを作ってみました。CLIとして動作しますが、Pythonモジュールとしても利用できます。
 
 ## 概要
@@ -24,7 +31,16 @@ pz80は下記の機能を持ちます。
 
 ## インストール
 
-現在ドキュメントのみの公開でプログラムはテスト中です。
+```bash
+pip install git+https://github.com/kudouta/pz80.git
+```
+
+ソースを取得してからインストールすることもできます。
+
+```bash
+cd pz80
+pip install .
+```
 
 ## 使い方の概要
 
@@ -75,6 +91,17 @@ START:              ; ラベル定義
 利用者から見える部分はすべて英語です。CLI のヘルプ・エラーメッセージ・`--auto-entry` の報告行、そして API の名前（関数名・引数名・キー名）が該当します。**この境界はテストで検査しているので、日本語の文字列が利用者に届くことはありません。**
 
 > **Note for non-Japanese readers**: comments and docstrings in `src/` are written in Japanese, by the author's deliberate choice, and will not be translated. Everything you interact with — CLI help, error messages, tool output, and all API names — is in English. A test enforces that no Japanese string reaches the user.
+
+## サポートについて / Support policy
+
+**このリポジトリは公開していますが、サポートは行いません。** Issue は開いていますが、
+返信や対応をお約束できません。作者個人の道具を、使える形で置いてあるものだと
+お考えください。MIT License の範囲で自由にご利用・改変いただけます。急ぎの用途や
+確実な修正が必要な場合は、fork してお使いください。
+
+> **Note**: this repository is published as-is, with no support. Issues are open, but
+> a reply is not guaranteed. It is one person's tool, made available under the MIT
+> License for anyone who finds it useful. If you need something fixed, fork it.
 
 ## ライセンス
 

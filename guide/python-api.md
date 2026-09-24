@@ -1,5 +1,7 @@
 # Pythonモジュールとしての使用
 
+> **このページはアーカイブです。** 最新版は **[kudouta/pz80](https://github.com/kudouta/pz80)** にあります。／ **Archived.** The current version lives at **[kudouta/pz80](https://github.com/kudouta/pz80)**.
+
 > pz80 の**Python API リファレンス**です。CLI の使い方は [README.md](../README.md)、アセンブリ言語の仕様は [language.md](language.md) を参照してください。
 
 Pythonのソースから pz80 をインポートして使用する例です。

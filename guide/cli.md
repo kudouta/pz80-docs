@@ -1,5 +1,7 @@
 # CLI の使い方
 
+> **このページはアーカイブです。** 最新版は **[kudouta/pz80](https://github.com/kudouta/pz80)** にあります。／ **Archived.** The current version lives at **[kudouta/pz80](https://github.com/kudouta/pz80)**.
+
 > pz80 の**コマンドライン リファレンス**です。アセンブリ言語の仕様は [language.md](language.md)、Python API は [python-api.md](python-api.md)、概要は [README.md](../README.md) を参照してください。
 
 

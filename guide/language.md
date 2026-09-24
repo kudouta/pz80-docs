@@ -1,5 +1,7 @@
 # アセンブリ言語仕様
 
+> **このページはアーカイブです。** 最新版は **[kudouta/pz80](https://github.com/kudouta/pz80)** にあります。／ **Archived.** The current version lives at **[kudouta/pz80](https://github.com/kudouta/pz80)**.
+
 > pz80 の**アセンブリ言語リファレンス**です。CLI の使い方は [README.md](../README.md)、Python API は [python-api.md](python-api.md) を参照してください。
 
 ## 基本構文
