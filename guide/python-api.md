@@ -49,8 +49,8 @@ Asm().assemble_lines(["ld a, 300"], file="main_code")
 ```python
 from pz80 import Asm
 
-Asm().exec("main.asm", defines={"DEBUG": 1})
-Asm().exec("main.asm", defines={"DEBUG": "0x01"})   # 値は文字列でもよい
+Asm().exec("conditional.asm", defines={"DEBUG": 1})
+Asm().exec("conditional.asm", defines={"DEBUG": "0x01"})   # 値は文字列でもよい
 ```
 
 `IF` の条件に未定義のシンボルを書くとエラーになります（`0` とは扱われません）。バリアントを切り替えるソースでは、どの構成でも必ず定義を渡してください。
@@ -153,7 +153,7 @@ for name, at in [("prg0.bin", 0x0000), ("prg1.bin", 0x0800),
 pathlib.Path("main.asm").write_text("org 0x0000\nnop\nret\n", encoding="utf-8")
 pathlib.Path("header.asm").write_text("HEADER: equ 0x1234\n", encoding="utf-8")
 pathlib.Path("legacy.asm").write_text("ld a, $2A\nret\n", encoding="utf-8")
-pathlib.Path("main.asm").write_text(
+pathlib.Path("conditional.asm").write_text(
     "IF DEBUG\nnop\nELSE\nret\nENDIF\n", encoding="utf-8")
 ```
 
